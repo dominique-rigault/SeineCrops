@@ -1,0 +1,89 @@
+# ── SeineCrops · .gitignore ───────────────────────────────────────────────────
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Environnements virtuels ───────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── Secrets & configuration locale ───────────────────────────────────────────
+.env.local
+*.env
+secrets.yml
+secrets.yaml
+credentials.json
+# Clés d'accès CDSE / Sentinel Hub (ne jamais committer)
+cdse_credentials.*
+sentinelhub_config.*
+
+# ── Données brutes (volumineuses, non redistribuées) ─────────────────────────
+raw/                          # Données sources brutes (S2, RPG…)
+data/raster/                  # Tuiles Sentinel-2 téléchargées
+data/vector/                  # Fichiers vecteur lourds
+*.tif
+*.tiff
+*.jp2                         # Format natif Sentinel-2
+*.nc                          # NetCDF (ERA5…)
+*.h5
+*.hdf5
+
+# ── Cache de traitement ───────────────────────────────────────────────────────
+cache/
+.cache/
+tmp/
+temp/
+
+# ── Formats vecteur intermédiaires ────────────────────────────────────────────
+*.gpkg
+*.gpkg-shm
+*.gpkg-wal
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+
+# ── Modèles ML (artefacts lourds) ────────────────────────────────────────────
+models/*.pkl
+models/*.joblib
+models/*.pt
+models/*.pth
+models/*.h5
+# Exception : conserver les petits fichiers de métadonnées de modèle
+!models/*.json
+!models/*.yaml
+
+# ── Notebooks — sorties et checkpoints ───────────────────────────────────────
+notebooks/.ipynb_checkpoints/
+# Les notebooks eux-mêmes sont versionnés (sorties nettoyées avant commit)
+
+# ── Tests & couverture ────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Outils de qualité ────────────────────────────────────────────────────────
+.ruff_cache/
+.mypy_cache/
+
+# ── IDE & éditeurs ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

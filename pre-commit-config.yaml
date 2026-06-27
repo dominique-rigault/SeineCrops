@@ -1,0 +1,36 @@
+# ── SeineCrops · hooks pre-commit ────────────────────────────────────────────
+# Installation :
+#   pip install pre-commit
+#   pre-commit install          # installe les hooks dans .git/hooks/
+#   pre-commit run --all-files  # vérification manuelle sur tout le dépôt
+
+repos:
+
+  # ── Nettoyage des notebooks (sorties + métadonnées d'exécution) ────────────
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
+        args: [--drop-empty-cells, --strip-init-cells]
+
+  # ── Hooks standard (fichiers, encodage, conflits) ─────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace       # supprime les espaces en fin de ligne
+      - id: end-of-file-fixer         # assure une newline en fin de fichier
+      - id: check-yaml                # valide la syntaxe YAML
+      - id: check-toml                # valide la syntaxe TOML
+      - id: check-json                # valide la syntaxe JSON
+      - id: check-merge-conflict      # détecte les marqueurs de conflit Git oubliés
+      - id: check-added-large-files   # bloque les fichiers > 500 ko par défaut
+        args: [--maxkb=500]
+      - id: detect-private-key        # détecte les clés privées accidentellement ajoutées
+
+  # ── Linter & formateur Python (ruff) ─────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff                      # lint
+        args: [--fix]
+      - id: ruff-format               # formatage (remplace black)

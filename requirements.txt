@@ -1,0 +1,55 @@
+# ── SeineCrops · dépendances Python ──────────────────────────────────────────
+# Versions minimales testées ; épingler à une version exacte (==) en production.
+#
+# Installer :  pip install -r requirements.txt
+# Environnement recommandé : Python 3.11+
+
+# ── Données spatiales & raster ────────────────────────────────────────────────
+gdal>=3.8                     # Lecture/écriture raster et vecteur
+rasterio>=1.3                 # Accès raster Pythonique (S2, indices)
+shapely>=2.0                  # Géométries vectorielles
+geopandas>=0.14               # GeoDataFrame, jointures spatiales
+pyproj>=3.6                   # Projections et transformations CRS
+fiona>=1.9                    # Lecture/écriture vecteur (GeoJSON, Shapefile…)
+
+# ── Base de données PostGIS ───────────────────────────────────────────────────
+psycopg2-binary>=2.9          # Connecteur PostgreSQL / PostGIS
+sqlalchemy>=2.0               # ORM et gestion des connexions
+geoalchemy2>=0.14             # Extension spatiale pour SQLAlchemy + PostGIS
+
+# ── Accès données Copernicus (Sentinel-2) ─────────────────────────────────────
+sentinelhub>=3.9              # API Sentinel Hub (CDSE) — téléchargement et traitements cloud
+# openeo>=0.26                # Alternative : client openEO (décommenter si retenu)
+
+# ── Traitement scientifique ───────────────────────────────────────────────────
+numpy>=1.26
+scipy>=1.11                   # Lissage Savitzky-Golay (métriques phéno SOS/POS/EOS)
+pandas>=2.1
+
+# ── Machine learning ──────────────────────────────────────────────────────────
+scikit-learn>=1.4             # Baseline Random Forest, métriques d'évaluation
+# torch>=2.2                  # Deep learning 1D-CNN / LSTM (décommenter si retenu)
+# keras>=3.0                  # Alternative DL (décommenter si retenu)
+
+# ── Masque nuages ─────────────────────────────────────────────────────────────
+s2cloudless>=1.7              # Masque nuages Sentinel-2 (complément à la bande SCL)
+
+# ── API ───────────────────────────────────────────────────────────────────────
+fastapi>=0.110
+uvicorn[standard]>=0.29       # Serveur ASGI pour FastAPI
+
+# ── Visualisation & export ────────────────────────────────────────────────────
+matplotlib>=3.8               # Graphes, profils temporels
+folium>=0.16                  # Carte web légère (prototypage rapide)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+pytest>=8.0
+pytest-cov>=5.0               # Couverture de tests
+
+# ── Développement (hooks) — ne pas installer en production ───────────────────
+# Ces outils s'exécutent en local et dans la CI, pas dans le conteneur de prod.
+# Installer avec :  pip install pre-commit nbstripout ruff
+#   puis :          pre-commit install
+pre-commit>=3.7               # Gestionnaire de hooks Git (.pre-commit-config.yaml)
+nbstripout>=0.7               # Vide les sorties des notebooks avant chaque commit
+ruff>=0.4                     # Linter et formateur Python (remplace flake8 + black)
