@@ -97,8 +97,15 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 
 ```
 SeineCrops/
+├── .github/workflows/        # CI/CD GitHub Actions
 ├── cadrage/                  # Documents de cadrage et de méthode
 │   └── SeineCrops_cadrage.pdf
+├── data/
+│   └── raw/
+│       └── rpg/
+├── divergence/
+├── docs/                     # Dictionnaire de données, schéma PostGIS
+├── notebooks/                # Exploration et visualisation
 ├── src/
 │   ├── acquisition/          # Téléchargement S2, ingestion RPG
 │   ├── processing/           # Masque nuages, indices, composite
@@ -106,17 +113,15 @@ SeineCrops/
 │   ├── ml/                   # Classification et détection de divergence
 │   ├── phenology/            # Métriques SOS/POS/EOS
 │   └── api/                  # FastAPI
-├── notebooks/                # Exploration et visualisation
 ├── tests/                    # Tests unitaires et d'intégration
-├── docs/                     # Dictionnaire de données, schéma PostGIS
 ├── .gitignore                # Exclusions du versionning
-├── .github/workflows/        # CI/CD GitHub Actions
+├── .pre-commit-config.yaml
+├── .projectroot
 ├── LICENSE                   # MIT (code)
 ├── LICENSE-docs              # CC-BY 4.0 (documentation)
 ├── LICENSING.md              # Tableau de partage des licences
-├── .pre-commit-config.yaml
-├── requirements.txt          # Dépendances Python
-└── README.md
+├── README.md
+└── requirements.txt          # Dépendances Python
 ```
 
 ---

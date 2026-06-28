@@ -28,7 +28,9 @@ cdse_credentials.*
 sentinelhub_config.*
 
 # ── Données brutes (volumineuses, non redistribuées) ─────────────────────────
-raw/                          # Données sources brutes (S2, RPG…)
+data/raw/**/*.7z
+data/raw/**/*.zip
+data/raw/**/*.gpkg
 data/raster/                  # Tuiles Sentinel-2 téléchargées
 data/vector/                  # Fichiers vecteur lourds
 *.tif

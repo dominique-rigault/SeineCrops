@@ -1,0 +1,41 @@
+{
+  "produit": "Registre parcellaire graphique (RPG)",
+  "base": "PARCELLES_AGRICOLES_CONSTATEES",
+  "annee_reference": 2024,
+  "millesime": 2024,
+  "fenetre_observation": [
+    "2023-09-01",
+    "2024-12-31"
+  ],
+  "emprise_administrative": "Normandie (R28)",
+  "producteur_diffuseur": "IGN (prod./diff.), ASP (gestion), MASA (cadre réglementaire)",
+  "portails": [
+    "https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_RPG",
+    "https://geoservices.ign.fr/rpg",
+    "https://www.data.gouv.fr/datasets/rpg"
+  ],
+  "licence": "Licence Ouverte / Etalab 2.0",
+  "crs_source": "EPSG:2154",
+  "documentation": {
+    "descriptif_contenu": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_RPG_3-0.pdf",
+    "suivi_evolutions": "https://data.geopf.fr/annexes/ressources/documentation/SE_RPG.pdf"
+  },
+  "millesimes_disponibles_wfs": [
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "date_recuperation": "2026-06-28",
+  "archive": "RPG_3-0__GPKG_LAMB93_R28_2024-01-01.7z",
+  "url_archive": null,
+  "sha256": "f1caf05d14c97223ba31e5e402be7ea87941da2919ee93610164e812c6ba78ef",
+  "statut": "archive_recuperee",
+  "note_offre_2024": "Depuis le millésime 2024, l'offre RPG comporte 7 bases thématiques (8 avec les îlots, selon le descriptif v3.0). On retient RPG Parcelles, continuité du RPG historique parcelle x culture."
+}
