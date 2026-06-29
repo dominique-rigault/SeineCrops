@@ -39,12 +39,12 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 
 ## Statut
 
-> 🚧 **En cours de construction** — sprint S0 (cadrage)
+> 🚧 **En cours de construction** — sprint S1 (données)
 
 | Sprint | Objectif | Statut |
 |---|---|---|
 | S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
-| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔜 |
+| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 ingestion RPG en cours |
 | S2 — Séries | Indices, composite mensuel, table spatio-temporelle | ⬜ |
 | S3 — Classification | Baseline RF, évaluation, option DL | ⬜ |
 | S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ⬜ |
@@ -68,13 +68,20 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 | Donnée | Source | Licence |
 |---|---|---|
 | Sentinel-2 L2A | Copernicus Data Space Ecosystem (CDSE) | Politique Copernicus (libre) |
-| RPG parcelles + culture | geoservices.ign.fr / WFS `RPG.LATEST` | Licence Ouverte Etalab v2 |
+| RPG parcelles + culture | IGN — archive régionale GeoPackage v3.0 (R28, millésime 2024) | Licence Ouverte Etalab v2 |
+| RPG codes cultures | Géoplateforme WFS `RPG.2024:codes_cultures` | Licence Ouverte Etalab v2 |
 | Masque nuages | Bande SCL du L2A | idem S2 |
 | Météo (optionnel) | meteo.data.gouv.fr / ERA5 CDS | Libre |
 | BD TOPO / Ortho (optionnel) | geoservices.ign.fr | Licence Ouverte Etalab v2 |
 
-> Les données ne sont pas redistribuées dans ce dépôt. Les scripts d'acquisition
-> sont dans `src/acquisition/`.
+> **RPG v3.0 (millésime 2024).** L'offre RPG est restructurée en 8 bases thématiques
+> (RPG\_Parcelles, RPG\_Ilots, RPG\_PAC, RPG\_PP, RPG\_BIO, RPG\_IAE, RPG\_SNA, RPG\_ZDH).
+> SeineCrops utilise **RPG\_Parcelles** comme vérité terrain (528 950 parcelles pour
+> la Normandie, EPSG:2154).
+
+> Les données ne sont pas redistribuées dans ce dépôt. La traçabilité de chaque
+> millésime est assurée par `SOURCE.json` (empreinte SHA-256) et `RECON.json`
+> (inventaire des couches, statistiques, emprise).
 
 ---
 
@@ -103,9 +110,18 @@ SeineCrops/
 ├── data/
 │   └── raw/
 │       └── rpg/
+│           ├── 2024/
+│           │   ├── R28/
+│           │   │   ├── SOURCE.json          # traçabilité : source, licence, SHA-256
+│           │   │   ├── RECON.json           # inventaire : couches, stats, emprise
+│           │   │   └── RPG_3-0__GPKG_…/    # archive décompressée (non versionnée)
+│           │   └── _referentiels/
+│           │       └── codes_cultures_2024.csv
+│           └── .gitignore                   # exclut archives et gpkg
 ├── divergence/
 ├── docs/                     # Dictionnaire de données, schéma PostGIS
-├── notebooks/                # Exploration et visualisation
+├── notebooks/
+│   └── 01_ingestion_rpg.ipynb   # acquisition RPG + reconnaissance (sections 1–2)
 ├── src/
 │   ├── acquisition/          # Téléchargement S2, ingestion RPG
 │   ├── processing/           # Masque nuages, indices, composite
@@ -128,22 +144,40 @@ SeineCrops/
 
 ## Démarrage rapide
 
-> ⚠️ *Section à compléter au sprint S1.*
-
 ```bash
 # Cloner le dépôt
 git clone https://github.com/dominique-rigault/SeineCrops.git
 cd SeineCrops
 
+# Créer et activer l'environnement virtuel
+python -m venv .venv-geo
+source .venv-geo/Scripts/activate   # Windows Git Bash
+# source .venv-geo/bin/activate     # Linux / macOS
+
 # Installer les dépendances
 pip install -r requirements.txt
 
-# Initialiser la base PostGIS
-psql -U postgres -f src/db/init.sql
-
-# Lancer les tests
-pytest
+# Activer les hooks pre-commit
+pre-commit install
 ```
+
+**Ingestion RPG (sprint S1 — en cours)**
+
+```bash
+# Télécharger l'archive régionale RPG depuis la page produit IGN :
+# https://geoservices.ign.fr/rpg
+# → Normandie (R28) · RPG Parcelles · millésime 2024
+# Déposer l'archive dans : data/raw/rpg/2024/R28/
+
+# Ouvrir et exécuter le notebook d'ingestion
+jupyter notebook notebooks/01_ingestion_rpg.ipynb
+# Section 1 : récupération et traçabilité du millésime (SOURCE.json)
+# Section 2 : reconnaissance du GeoPackage (RECON.json)
+# Sections 3–8 : à venir (PostGIS, clip AOI, chargement, QA)
+```
+
+> La décompression de l'archive `.7z` est automatique (via `py7zr`).
+> PostGIS requis pour les sections 3 et suivantes.
 
 ---
 
@@ -151,7 +185,20 @@ pytest
 
 > *Cette section sera alimentée jalon par jalon.*
 
-<!-- S1 : ajouter ici l'histogramme de disponibilité S2 -->
+**S1 — Ingestion RPG (en cours)**
+
+RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
+
+| Indicateur | Valeur |
+|---|---|
+| Parcelles (Normandie entière) | 528 950 |
+| Surface moyenne | 3,6 ha (médiane 2,1 ha) |
+| Surface max | 800,9 ha |
+| Emprise (Lambert-93) | x : 343 139 – 613 528 · y : 6 788 983 – 6 998 373 |
+| Top cultures (échantillon) | SNE, JAC, PPH, BTA, BOR, PTR |
+| Codes cultures (référentiel national) | 147 codes |
+
+<!-- S1 suite : ajouter ici l'histogramme de disponibilité S2 -->
 <!-- S2 : ajouter ici un exemple de profil NDVI par parcelle -->
 <!-- S3 : ajouter ici la carte des cultures prédites et la matrice de confusion -->
 <!-- S4 : ajouter ici la carte de divergence et les métriques phéno -->
