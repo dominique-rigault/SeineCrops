@@ -53,7 +53,10 @@ data/vector/                  # Fichiers vecteur lourds
 *.dbf
 *.prj
 *.cpg
+
+# ── QGIS ──────────────────────────────────────────────────────────────────────
 *.qgz
+*.qmd
 
 # ── Cache de traitement ───────────────────────────────────────────────────────
 cache/
