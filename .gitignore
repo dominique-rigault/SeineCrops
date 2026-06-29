@@ -55,6 +55,7 @@ temp/
 *.dbf
 *.prj
 *.cpg
+*.qgz
 
 # ── Modèles ML (artefacts lourds) ────────────────────────────────────────────
 models/*.pkl
