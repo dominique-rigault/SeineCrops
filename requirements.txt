@@ -17,6 +17,7 @@ pyogrio>=0.7                  # Lecture rapide vecteur via GDAL (alternative per
 psycopg2-binary>=2.9          # Connecteur PostgreSQL / PostGIS
 sqlalchemy>=2.0               # ORM et gestion des connexions
 geoalchemy2>=0.14             # Extension spatiale pour SQLAlchemy + PostGIS
+python-dotenv>=1.0            # Chargement des variables d'environnement (.env)
 
 # ── Accès données Copernicus (Sentinel-2) ─────────────────────────────────────
 sentinelhub>=3.9              # API Sentinel Hub (CDSE) — téléchargement et traitements cloud

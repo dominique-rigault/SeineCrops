@@ -28,11 +28,15 @@ cdse_credentials.*
 sentinelhub_config.*
 
 # ── Données brutes (volumineuses, non redistribuées) ─────────────────────────
-data/raw/**/
-!data/raw/**/*.json
-!data/raw/**/*.csv
+# Règle : exclure par type de fichier, PAS par dossier entier
+# (ignorer un dossier entier neutralise les négations !... sur son contenu)
+data/raw/**/*.7z
+data/raw/**/*.zip
+data/raw/**/*.pdf
 data/raster/                  # Tuiles Sentinel-2 téléchargées
 data/vector/                  # Fichiers vecteur lourds
+
+# ── Formats raster ────────────────────────────────────────────────────────────
 *.tif
 *.tiff
 *.jp2                         # Format natif Sentinel-2
@@ -40,13 +44,7 @@ data/vector/                  # Fichiers vecteur lourds
 *.h5
 *.hdf5
 
-# ── Cache de traitement ───────────────────────────────────────────────────────
-cache/
-.cache/
-tmp/
-temp/
-
-# ── Formats vecteur intermédiaires ────────────────────────────────────────────
+# ── Formats vecteur ───────────────────────────────────────────────────────────
 *.gpkg
 *.gpkg-shm
 *.gpkg-wal
@@ -56,6 +54,12 @@ temp/
 *.prj
 *.cpg
 *.qgz
+
+# ── Cache de traitement ───────────────────────────────────────────────────────
+cache/
+.cache/
+tmp/
+temp/
 
 # ── Modèles ML (artefacts lourds) ────────────────────────────────────────────
 models/*.pkl

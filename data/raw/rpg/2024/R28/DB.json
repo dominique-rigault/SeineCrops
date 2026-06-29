@@ -1,0 +1,13 @@
+{
+  "date": "2026-06-29",
+  "host": "localhost",
+  "port": 5432,
+  "dbname": "seinecrops",
+  "user": "postgres",
+  "postgresql": "PostgreSQL 18.4 on x86_64-windows",
+  "postgis": "3.6 USE_GEOS=1 USE_PROJ=1 USE_STATS=1",
+  "schemas": [
+    "raw",
+    "derived"
+  ]
+}
