@@ -44,7 +44,7 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 | Sprint | Objectif | Statut |
 |---|---|---|
 | S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
-| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 RPG chargé + filtré sur l'AOI |
+| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 RPG ingéré, validé, documenté · dispo S2 à venir |
 | S2 — Séries | Indices, composite mensuel, table spatio-temporelle | ⬜ |
 | S3 — Classification | Baseline RF, évaluation, option DL | ⬜ |
 | S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ⬜ |
@@ -110,28 +110,34 @@ SeineCrops/
 ├── cadrage/                  # Documents de cadrage et de méthode
 │   └── SeineCrops_cadrage.pdf
 ├── data/
-│   └── raw/
-│       └── rpg/
-│           ├── 2024/
-│           │   ├── R28/
-│           │   │   ├── SOURCE.json          # traçabilité : source, licence, SHA-256
-│           │   │   ├── RECON.json           # inventaire : couches, stats, emprise
-│           │   │   └── RPG_3-0__GPKG_…/    # archive décompressée (non versionnée)
-│           │   └── _referentiels/
-│           │       └── codes_cultures_2024.csv
-│           └── .gitignore                   # exclut archives et gpkg
+│   ├── raw/
+│   │   └── rpg/
+│   │       └── 2024/
+│   │           ├── R28/
+│   │           │   ├── SOURCE.json          # traçabilité : source, licence, SHA-256
+│   │           │   ├── RECON.json           # inventaire : couches, stats, emprise
+│   │           │   ├── DB.json              # versions PostgreSQL / PostGIS, schémas
+│   │           │   ├── INGESTION_REPORT.json # rapport de clôture consolidé
+│   │           │   └── RPG_3-0__GPKG_…/    # archive décompressée (non versionnée)
+│   │           └── _referentiels/
+│   │               └── codes_cultures_2024.csv
+│   └── vector/
+│       └── aoi/
+│           └── aoi_seinecrops.geojson       # AOI Caux + Neubourg (dessinée QGIS)
 ├── divergence/
 ├── docs/                     # Dictionnaire de données, schéma PostGIS
 ├── notebooks/
-│   └── 01_ingestion_rpg.ipynb   # acquisition RPG + reconnaissance (sections 1–2)
+│   └── 01_ingestion_rpg.ipynb   # acquisition, reconnaissance, PostGIS, filtre AOI, QA (sections 1–5)
 ├── src/
 │   ├── acquisition/          # Téléchargement S2, ingestion RPG
 │   ├── processing/           # Masque nuages, indices, composite
-│   ├── db/                   # Schéma PostGIS, migrations
+│   ├── db/
+│   │   └── init.sql          # extension PostGIS, schémas raw / derived
 │   ├── ml/                   # Classification et détection de divergence
 │   ├── phenology/            # Métriques SOS/POS/EOS
 │   └── api/                  # FastAPI
 ├── tests/                    # Tests unitaires et d'intégration
+├── .env                      # identifiants PostGIS (non versionné)
 ├── .gitignore                # Exclusions du versionning
 ├── .pre-commit-config.yaml
 ├── .projectroot
@@ -163,7 +169,18 @@ pip install -r requirements.txt
 pre-commit install
 ```
 
-**Ingestion RPG (sprint S1 — en cours)**
+**Base PostGIS**
+
+```bash
+# Créer la base et activer PostGIS + schémas (raw, derived)
+psql -U postgres -c "CREATE DATABASE seinecrops;"
+psql -U postgres -d seinecrops -f src/db/init.sql
+
+# Configurer les identifiants de connexion (non versionné)
+cp .env.example .env   # puis renseigner PG_PASSWORD
+```
+
+**Ingestion RPG (sprint S1 — terminée)**
 
 ```bash
 # Télécharger l'archive régionale RPG depuis la page produit IGN :
@@ -171,15 +188,18 @@ pre-commit install
 # → Normandie (R28) · RPG Parcelles · millésime 2024
 # Déposer l'archive dans : data/raw/rpg/2024/R28/
 
-# Ouvrir et exécuter le notebook d'ingestion
+# Ouvrir et exécuter le notebook d'ingestion (Run All)
 jupyter notebook notebooks/01_ingestion_rpg.ipynb
 # Section 1 : récupération et traçabilité du millésime (SOURCE.json)
 # Section 2 : reconnaissance du GeoPackage (RECON.json)
-# Sections 3–8 : à venir (PostGIS, clip AOI, chargement, QA)
+# Section 3 : connexion PostGIS (DB.json)
+# Section 4 : chargement raw + QA géométrique + filtre AOI (derived)
+# Section 5 : assertions de cohérence + rapport de clôture (INGESTION_REPORT.json)
 ```
 
 > La décompression de l'archive `.7z` est automatique (via `py7zr`).
-> PostGIS requis pour les sections 3 et suivantes.
+> Le chargement PostGIS passe par le driver PGDUMP de GDAL + `psql`
+> (`ogr2ogr` et le driver PostgreSQL natif sont absents de cet environnement Windows).
 
 ---
 
@@ -187,7 +207,7 @@ jupyter notebook notebooks/01_ingestion_rpg.ipynb
 
 > *Cette section sera alimentée jalon par jalon.*
 
-**S1 — Ingestion RPG (en cours)**
+**S1 — Ingestion RPG (terminée)**
 
 RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
 
@@ -200,10 +220,13 @@ RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
 | Emprise (Lambert-93) | x : 343 139 – 613 528 · y : 6 788 983 – 6 998 373 | x : 487 964 – 582 799 · y : 6 875 633 – 6 981 896 |
 | Top cultures (échantillon) | SNE, JAC, PPH, BTA, BOR, PTR | — |
 | Codes cultures (référentiel national) | 147 codes | — |
-| Géométries invalides après filtre AOI | — | 0 |
+| Géométries invalides (avant filtre AOI) | 0 | — |
+| Index spatial (GIST) + attributaire (`code_cultu`) | — | ✅ |
 
 > Parcelles intersectant l'AOI conservées **entières** (pas de découpe à la frontière) :
 > une parcelle tronquée perdrait sa cohérence phénologique pour la classification.
+> La QA géométrique (`ST_IsValid` / `ST_MakeValid`) est appliquée à `raw` **avant** le
+> filtre AOI, pour qu'aucune parcelle invalide ne soit silencieusement exclue sans trace.
 
 <!-- S1 suite : ajouter ici l'histogramme de disponibilité S2 -->
 <!-- S2 : ajouter ici un exemple de profil NDVI par parcelle -->

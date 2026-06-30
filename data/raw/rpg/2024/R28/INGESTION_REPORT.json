@@ -1,0 +1,54 @@
+{
+  "date_cloture": "2026-06-30",
+  "millesime": 2024,
+  "region": "R28",
+  "source": {
+    "archive": "RPG_3-0__GPKG_LAMB93_R28_2024-01-01.7z",
+    "sha256": "f1caf05d14c97223ba31e5e402be7ea87941da2919ee93610164e812c6ba78ef",
+    "licence": "Licence Ouverte / Etalab 2.0",
+    "date_recuperation": "2026-06-30"
+  },
+  "reconnaissance": {
+    "n_objets_normandie": 528950,
+    "schema_attributaire": [
+      "id_parcel",
+      "surf_parc",
+      "code_cultu",
+      "code_group",
+      "culture_d1",
+      "culture_d2",
+      "cat_cult_p"
+    ]
+  },
+  "base_postgis": {
+    "host": "localhost",
+    "dbname": "seinecrops",
+    "postgresql": "PostgreSQL 18.4 on x86_64-windows",
+    "postgis": "3.6 USE_GEOS=1 USE_PROJ=1 USE_STATS=1"
+  },
+  "filtre_aoi": {
+    "aoi_fichier": "data\\vector\\aoi\\aoi_seinecrops.geojson",
+    "table_resultat": "derived.rpg_parcelles_aoi",
+    "methode": "ST_Intersects (parcelles entières, pas de découpe à la frontière)",
+    "n_parcelles_normandie": 528950,
+    "n_parcelles_aoi": 80689,
+    "surface_totale_ha": 334942.9
+  },
+  "qa": {
+    "geometries_invalides_raw_avant_filtre": 10,
+    "geometries_reparees_raw_avant_filtre": 10,
+    "geometries_invalides_derived_apres_filtre": 0,
+    "geometries_reparees_derived_apres_filtre": 0,
+    "parcelles_orphelines": 0,
+    "index_presents": [
+      "idx_rpg_parcelles_aoi_geom",
+      "idx_rpg_parcelles_aoi_code_cultu"
+    ],
+    "note_ordre_qa": "QA géométrique appliquée à raw AVANT le filtre AOI (4.1bis), pas après : une parcelle invalide dans l'AOI doit être réparée ou explicitement tracée, pas silencieusement exclue par un WHERE ST_IsValid dans la requête de filtre."
+  },
+  "referentiel_cultures": {
+    "fichier": "data\\raw\\rpg\\2024\\_referentiels\\codes_cultures_2024.csv",
+    "n_codes": 147,
+    "source": "WFS Géoplateforme — RPG.2024:codes_cultures"
+  }
+}

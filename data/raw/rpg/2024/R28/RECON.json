@@ -2,7 +2,7 @@
   "gpkg": "RPG_Parcelles.gpkg",
   "chemin_relatif": "RPG_3-0__GPKG_LAMB93_R28_2024-01-01\\RPG\\1_DONNEES_LIVRAISON_2024\\RPG_3-0__GPKG_LAMB93_R28_2024-01-01\\RPG_Parcelles.gpkg",
   "taille_go": 0.359,
-  "date_reconnaissance": "2026-06-28",
+  "date_reconnaissance": "2026-06-30",
   "couches": [
     {
       "couche": "RPG_Parcelles",
@@ -60,114 +60,113 @@
     "75%": 4.67,
     "max": 800.9
   },
-  "note_surf_parc_stats": "Calculé sur les 528 950 parcelles complètes — l'échantillon max_features=50 000 était biaisé vers les petites entités (tri interne du GeoPackage par id_parcel croissant).",
-  "top20_cultures_sample": [
-    {
-      "code_cultu": "SNE",
-      "n_parcelles": 16513,
-      "pct": 33.0
-    },
-    {
-      "code_cultu": "JAC",
-      "n_parcelles": 8490,
-      "pct": 17.0
-    },
+  "top20_cultures": [
     {
       "code_cultu": "PPH",
-      "n_parcelles": 7607,
-      "pct": 15.2
-    },
-    {
-      "code_cultu": "BTA",
-      "n_parcelles": 5434,
-      "pct": 10.9
-    },
-    {
-      "code_cultu": "BOR",
-      "n_parcelles": 3433,
-      "pct": 6.9
-    },
-    {
-      "code_cultu": "PTR",
-      "n_parcelles": 3088,
-      "pct": 6.2
-    },
-    {
-      "code_cultu": "BFS",
-      "n_parcelles": 1189,
-      "pct": 2.4
+      "n_parcelles": 198086,
+      "pct": 37.4
     },
     {
       "code_cultu": "MIS",
-      "n_parcelles": 594,
-      "pct": 1.2
-    },
-    {
-      "code_cultu": "MDI",
-      "n_parcelles": 502,
-      "pct": 1.0
-    },
-    {
-      "code_cultu": "TRE",
-      "n_parcelles": 421,
-      "pct": 0.8
-    },
-    {
-      "code_cultu": "VRG",
-      "n_parcelles": 314,
-      "pct": 0.6
-    },
-    {
-      "code_cultu": "MSW",
-      "n_parcelles": 285,
-      "pct": 0.6
+      "n_parcelles": 73217,
+      "pct": 13.8
     },
     {
       "code_cultu": "BTH",
-      "n_parcelles": 275,
-      "pct": 0.5
+      "n_parcelles": 61542,
+      "pct": 11.6
     },
     {
-      "code_cultu": "PTC",
-      "n_parcelles": 148,
-      "pct": 0.3
+      "code_cultu": "PTR",
+      "n_parcelles": 29714,
+      "pct": 5.6
     },
     {
-      "code_cultu": "MLG",
-      "n_parcelles": 146,
-      "pct": 0.3
+      "code_cultu": "SNE",
+      "n_parcelles": 23645,
+      "pct": 4.5
     },
     {
-      "code_cultu": "LUZ",
-      "n_parcelles": 142,
-      "pct": 0.3
+      "code_cultu": "JAC",
+      "n_parcelles": 21220,
+      "pct": 4.0
     },
     {
-      "code_cultu": "PFR",
-      "n_parcelles": 135,
-      "pct": 0.3
+      "code_cultu": "ORH",
+      "n_parcelles": 17888,
+      "pct": 3.4
+    },
+    {
+      "code_cultu": "CZH",
+      "n_parcelles": 17398,
+      "pct": 3.3
+    },
+    {
+      "code_cultu": "LIF",
+      "n_parcelles": 13160,
+      "pct": 2.5
+    },
+    {
+      "code_cultu": "BTA",
+      "n_parcelles": 9996,
+      "pct": 1.9
     },
     {
       "code_cultu": "ORP",
-      "n_parcelles": 129,
+      "n_parcelles": 6910,
+      "pct": 1.3
+    },
+    {
+      "code_cultu": "BTN",
+      "n_parcelles": 5775,
+      "pct": 1.1
+    },
+    {
+      "code_cultu": "MLG",
+      "n_parcelles": 5755,
+      "pct": 1.1
+    },
+    {
+      "code_cultu": "BOR",
+      "n_parcelles": 4468,
+      "pct": 0.8
+    },
+    {
+      "code_cultu": "LUZ",
+      "n_parcelles": 4114,
+      "pct": 0.8
+    },
+    {
+      "code_cultu": "TRE",
+      "n_parcelles": 4031,
+      "pct": 0.8
+    },
+    {
+      "code_cultu": "PTC",
+      "n_parcelles": 3587,
+      "pct": 0.7
+    },
+    {
+      "code_cultu": "VRG",
+      "n_parcelles": 3576,
+      "pct": 0.7
+    },
+    {
+      "code_cultu": "PPR",
+      "n_parcelles": 1662,
       "pct": 0.3
     },
     {
-      "code_cultu": "FLP",
-      "n_parcelles": 110,
-      "pct": 0.2
-    },
-    {
-      "code_cultu": "FLA",
-      "n_parcelles": 104,
-      "pct": 0.2
+      "code_cultu": "MSW",
+      "n_parcelles": 1493,
+      "pct": 0.3
     }
   ],
   "codes_cultures": {
     "source": "WFS Géoplateforme — RPG.2024:codes_cultures",
     "url": "https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=RPG.2024:codes_cultures&OUTPUTFORMAT=application%2Fjson",
     "n_codes": 147,
-    "note": "Absent de l'archive régionale v3.0 — récupéré via WFS et exporté dans _referentiels/.",
+    "note": "Absent de l'archive régionale v3.0 — récupéré via WFS.",
     "export": "codes_cultures_2024.csv"
   },
   "autres_bases_livraison": [
