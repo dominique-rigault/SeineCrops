@@ -44,7 +44,7 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 | Sprint | Objectif | Statut |
 |---|---|---|
 | S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
-| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 ingestion RPG en cours |
+| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 RPG chargé + filtré sur l'AOI |
 | S2 — Séries | Indices, composite mensuel, table spatio-temporelle | ⬜ |
 | S3 — Classification | Baseline RF, évaluation, option DL | ⬜ |
 | S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ⬜ |
@@ -55,9 +55,11 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 
 ## Zone d'étude & période
 
-- **AOI** : est du Pays de Caux + plateau du Neubourg (Eure), de part et d'autre
-  de la Seine — openfield grandes cultures, hors bocage et fonds de vallées.
-  Surface cible : 500–1 500 km², 1–2 tuiles Sentinel-2.
+- **AOI** : Pays de Caux + plateau du Neubourg (Eure), de part et d'autre
+  de la Seine, de la pointe du Havre au sud du Neubourg — openfield grandes
+  cultures, hors bocage et fonds de vallées (exclusion par type de culture
+  déclaré, pas par découpe géométrique). Surface mesurée : **3 349 km²**
+  (80 689 parcelles), 1–2 tuiles Sentinel-2.
 - **Période** : septembre N → décembre N+1 (~16 mois, campagne RPG N+1).
 - **Cultures cibles** : blé tendre, orge, colza, maïs, betterave, lin, prairies, autres.
 
@@ -189,14 +191,19 @@ jupyter notebook notebooks/01_ingestion_rpg.ipynb
 
 RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
 
-| Indicateur | Valeur |
-|---|---|
-| Parcelles (Normandie entière) | 528 950 |
-| Surface moyenne | 3,6 ha (médiane 2,1 ha) |
-| Surface max | 800,9 ha |
-| Emprise (Lambert-93) | x : 343 139 – 613 528 · y : 6 788 983 – 6 998 373 |
-| Top cultures (échantillon) | SNE, JAC, PPH, BTA, BOR, PTR |
-| Codes cultures (référentiel national) | 147 codes |
+| Indicateur | Normandie entière | AOI (Caux + Neubourg) |
+|---|---|---|
+| Parcelles | 528 950 | 80 689 |
+| Surface totale | — | 334 943 ha (3 349 km²) |
+| Surface moyenne | 3,6 ha (médiane 2,1 ha) | — |
+| Surface max | 800,9 ha | — |
+| Emprise (Lambert-93) | x : 343 139 – 613 528 · y : 6 788 983 – 6 998 373 | x : 487 964 – 582 799 · y : 6 875 633 – 6 981 896 |
+| Top cultures (échantillon) | SNE, JAC, PPH, BTA, BOR, PTR | — |
+| Codes cultures (référentiel national) | 147 codes | — |
+| Géométries invalides après filtre AOI | — | 0 |
+
+> Parcelles intersectant l'AOI conservées **entières** (pas de découpe à la frontière) :
+> une parcelle tronquée perdrait sa cohérence phénologique pour la classification.
 
 <!-- S1 suite : ajouter ici l'histogramme de disponibilité S2 -->
 <!-- S2 : ajouter ici un exemple de profil NDVI par parcelle -->
