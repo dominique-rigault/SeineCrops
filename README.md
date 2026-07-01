@@ -44,7 +44,7 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 | Sprint | Objectif | Statut |
 |---|---|---|
 | S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
-| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 RPG ingéré, validé, documenté · dispo S2 en cours |
+| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | ✅ |
 | S2 — Séries | Indices, composite mensuel, table spatio-temporelle | ⬜ |
 | S3 — Classification | Baseline RF, évaluation, option DL | ⬜ |
 | S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ⬜ |

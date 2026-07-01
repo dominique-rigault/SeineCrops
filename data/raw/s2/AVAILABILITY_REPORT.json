@@ -1,0 +1,172 @@
+{
+  "generated_at": "2026-07-01T14:46:05.406302+00:00",
+  "annee_reference": 2024,
+  "fenetre": {
+    "start": "2023-09-01T00:00:00.000Z",
+    "end": "2024-12-31T23:59:59.999Z"
+  },
+  "tuiles": {
+    "30UYA": {
+      "pair": "nord"
+    },
+    "31UCR": {
+      "pair": "nord"
+    },
+    "30UYV": {
+      "pair": "sud"
+    },
+    "31UCQ": {
+      "pair": "sud"
+    }
+  },
+  "orbites_relatives": {
+    "30UYA": [
+      94,
+      137
+    ],
+    "30UYV": [
+      51,
+      94,
+      137
+    ],
+    "31UCQ": [
+      51,
+      94,
+      137
+    ],
+    "31UCR": [
+      51,
+      94,
+      137
+    ]
+  },
+  "catalogue": {
+    "scenes_brutes": 1130,
+    "scenes_dedup": 1071,
+    "doublons_supprimes": 59,
+    "filtre_nuage": null
+  },
+  "disponibilite": {
+    "jours_fenetre": 488,
+    "jours_couverts": 292,
+    "pct_couverts": 59.8,
+    "mensuel": [
+      {
+        "mois": "2023-09",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 30,
+        "pct_covered": 60.0
+      },
+      {
+        "mois": "2023-10",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 31,
+        "pct_covered": 58.1
+      },
+      {
+        "mois": "2023-11",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 30,
+        "pct_covered": 60.0
+      },
+      {
+        "mois": "2023-12",
+        "n_scenes": 69,
+        "days_covered": 19,
+        "days_in_month": 31,
+        "pct_covered": 61.3
+      },
+      {
+        "mois": "2024-01",
+        "n_scenes": 67,
+        "days_covered": 18,
+        "days_in_month": 31,
+        "pct_covered": 58.1
+      },
+      {
+        "mois": "2024-02",
+        "n_scenes": 62,
+        "days_covered": 17,
+        "days_in_month": 29,
+        "pct_covered": 58.6
+      },
+      {
+        "mois": "2024-03",
+        "n_scenes": 70,
+        "days_covered": 19,
+        "days_in_month": 31,
+        "pct_covered": 61.3
+      },
+      {
+        "mois": "2024-04",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 30,
+        "pct_covered": 60.0
+      },
+      {
+        "mois": "2024-05",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 31,
+        "pct_covered": 58.1
+      },
+      {
+        "mois": "2024-06",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 30,
+        "pct_covered": 60.0
+      },
+      {
+        "mois": "2024-07",
+        "n_scenes": 70,
+        "days_covered": 19,
+        "days_in_month": 31,
+        "pct_covered": 61.3
+      },
+      {
+        "mois": "2024-08",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 31,
+        "pct_covered": 58.1
+      },
+      {
+        "mois": "2024-09",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 30,
+        "pct_covered": 60.0
+      },
+      {
+        "mois": "2024-10",
+        "n_scenes": 69,
+        "days_covered": 19,
+        "days_in_month": 31,
+        "pct_covered": 61.3
+      },
+      {
+        "mois": "2024-11",
+        "n_scenes": 66,
+        "days_covered": 18,
+        "days_in_month": 30,
+        "pct_covered": 60.0
+      },
+      {
+        "mois": "2024-12",
+        "n_scenes": 70,
+        "days_covered": 19,
+        "days_in_month": 31,
+        "pct_covered": 61.3
+      }
+    ]
+  },
+  "niveau_2": {
+    "statut": "non calculé",
+    "description": "f_valid_aoi sera calculé en sprint S2 par téléchargement de la bande SCL (60 m) et calcul de la fraction de pixels valides sur l'AOI (classes SCL invalides : 3, 8, 9, 10, 11)."
+  }
+}

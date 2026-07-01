@@ -7,10 +7,14 @@
 repos:
 
   # ── Nettoyage des notebooks (sorties + métadonnées d'exécution) ────────────
-  - repo: https://github.com/kynan/nbstripout
-    rev: 0.7.1
+  # Invocation via python -m pour contourner les restrictions AppLocker/WDAC
+  - repo: local
     hooks:
       - id: nbstripout
+        name: nbstripout
+        entry: python -m nbstripout
+        language: system
+        types: [jupyter]
         args: [--drop-empty-cells, --strip-init-cells]
 
   # ── Hooks standard (fichiers, encodage, conflits) ─────────────────────────
