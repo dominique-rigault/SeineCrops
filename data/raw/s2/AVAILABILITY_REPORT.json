@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-01T14:46:05.406302+00:00",
+  "generated_at": "2026-07-01T15:19:54.092578+00:00",
   "annee_reference": 2024,
   "fenetre": {
     "start": "2023-09-01T00:00:00.000Z",
@@ -50,118 +50,153 @@
     "jours_fenetre": 488,
     "jours_couverts": 292,
     "pct_couverts": 59.8,
+    "jours_full_aoi": 292,
+    "pct_full_aoi": 59.8,
+    "note_full_aoi": "Jours où les paires nord (30UYA|31UCR) ET sud (30UYV|31UCQ) sont simultanément couvertes",
     "mensuel": [
       {
         "mois": "2023-09",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 30,
-        "pct_covered": 60.0
+        "pct_covered": 60.0,
+        "pct_full_aoi": 60.0
       },
       {
         "mois": "2023-10",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 31,
-        "pct_covered": 58.1
+        "pct_covered": 58.1,
+        "pct_full_aoi": 58.1
       },
       {
         "mois": "2023-11",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 30,
-        "pct_covered": 60.0
+        "pct_covered": 60.0,
+        "pct_full_aoi": 60.0
       },
       {
         "mois": "2023-12",
         "n_scenes": 69,
         "days_covered": 19,
+        "days_full_aoi": 19,
         "days_in_month": 31,
-        "pct_covered": 61.3
+        "pct_covered": 61.3,
+        "pct_full_aoi": 61.3
       },
       {
         "mois": "2024-01",
         "n_scenes": 67,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 31,
-        "pct_covered": 58.1
+        "pct_covered": 58.1,
+        "pct_full_aoi": 58.1
       },
       {
         "mois": "2024-02",
         "n_scenes": 62,
         "days_covered": 17,
+        "days_full_aoi": 17,
         "days_in_month": 29,
-        "pct_covered": 58.6
+        "pct_covered": 58.6,
+        "pct_full_aoi": 58.6
       },
       {
         "mois": "2024-03",
         "n_scenes": 70,
         "days_covered": 19,
+        "days_full_aoi": 19,
         "days_in_month": 31,
-        "pct_covered": 61.3
+        "pct_covered": 61.3,
+        "pct_full_aoi": 61.3
       },
       {
         "mois": "2024-04",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 30,
-        "pct_covered": 60.0
+        "pct_covered": 60.0,
+        "pct_full_aoi": 60.0
       },
       {
         "mois": "2024-05",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 31,
-        "pct_covered": 58.1
+        "pct_covered": 58.1,
+        "pct_full_aoi": 58.1
       },
       {
         "mois": "2024-06",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 30,
-        "pct_covered": 60.0
+        "pct_covered": 60.0,
+        "pct_full_aoi": 60.0
       },
       {
         "mois": "2024-07",
         "n_scenes": 70,
         "days_covered": 19,
+        "days_full_aoi": 19,
         "days_in_month": 31,
-        "pct_covered": 61.3
+        "pct_covered": 61.3,
+        "pct_full_aoi": 61.3
       },
       {
         "mois": "2024-08",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 31,
-        "pct_covered": 58.1
+        "pct_covered": 58.1,
+        "pct_full_aoi": 58.1
       },
       {
         "mois": "2024-09",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 30,
-        "pct_covered": 60.0
+        "pct_covered": 60.0,
+        "pct_full_aoi": 60.0
       },
       {
         "mois": "2024-10",
         "n_scenes": 69,
         "days_covered": 19,
+        "days_full_aoi": 19,
         "days_in_month": 31,
-        "pct_covered": 61.3
+        "pct_covered": 61.3,
+        "pct_full_aoi": 61.3
       },
       {
         "mois": "2024-11",
         "n_scenes": 66,
         "days_covered": 18,
+        "days_full_aoi": 18,
         "days_in_month": 30,
-        "pct_covered": 60.0
+        "pct_covered": 60.0,
+        "pct_full_aoi": 60.0
       },
       {
         "mois": "2024-12",
         "n_scenes": 70,
         "days_covered": 19,
+        "days_full_aoi": 19,
         "days_in_month": 31,
-        "pct_covered": 61.3
+        "pct_covered": 61.3,
+        "pct_full_aoi": 61.3
       }
     ]
   },
