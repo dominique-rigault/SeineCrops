@@ -39,13 +39,13 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 
 ## Statut
 
-> 🚧 **En cours de construction** — sprint S1 (données)
+> 🚧 **En cours de construction** — sprint S2 (séries temporelles)
 
 | Sprint | Objectif | Statut |
 |---|---|---|
 | S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
 | S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | ✅ |
-| S2 — Séries | Indices, composite mensuel, table spatio-temporelle | ⬜ |
+| S2 — Séries | Téléchargement SCL, indices, composite mensuel, table spatio-temporelle | 🚧 |
 | S3 — Classification | Baseline RF, évaluation, option DL | ⬜ |
 | S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ⬜ |
 | S5 — Service | FastAPI + carte web | ⬜ |
@@ -111,23 +111,27 @@ SeineCrops/
 │   └── SeineCrops_cadrage.pdf
 ├── data/
 │   ├── raw/
-│   │   └── rpg/
-│   │       └── 2024/
-│   │           ├── R28/
-│   │           │   ├── SOURCE.json          # traçabilité : source, licence, SHA-256
-│   │           │   ├── RECON.json           # inventaire : couches, stats, emprise
-│   │           │   ├── DB.json              # versions PostgreSQL / PostGIS, schémas
-│   │           │   ├── INGESTION_REPORT.json # rapport de clôture consolidé
-│   │           │   └── RPG_3-0__GPKG_…/    # archive décompressée (non versionnée)
-│   │           └── _referentiels/
-│   │               └── codes_cultures_2024.csv
+│   │   ├── rpg/
+│   │   │   └── 2024/
+│   │   │       ├── R28/
+│   │   │       │   ├── SOURCE.json          # traçabilité : source, licence, SHA-256
+│   │   │       │   ├── RECON.json           # inventaire : couches, stats, emprise
+│   │   │       │   ├── DB.json              # versions PostgreSQL / PostGIS, schémas
+│   │   │       │   ├── INGESTION_REPORT.json # rapport de clôture consolidé
+│   │   │       │   └── RPG_3-0__GPKG_…/    # archive décompressée (non versionnée)
+│   │   │       └── _referentiels/
+│   │   │           └── codes_cultures_2024.csv
+│   │   └── s2/
+│   │       ├── AVAILABILITY_REPORT.json     # rapport de clôture disponibilité S2
+│   │       └── availability_s2.png          # histogramme mensuel (non versionné)
 │   └── vector/
 │       └── aoi/
 │           └── aoi_seinecrops.geojson       # AOI Caux + Neubourg (dessinée QGIS)
 ├── divergence/
 ├── docs/                     # Dictionnaire de données, schéma PostGIS
 ├── notebooks/
-│   └── 01_ingestion_rpg.ipynb   # acquisition, reconnaissance, PostGIS, filtre AOI, QA (sections 1–5)
+│   ├── 01_ingestion_rpg.ipynb    # S1 : acquisition RPG, PostGIS, filtre AOI, QA (sections 1–5)
+│   └── 02_disponibilite_s2.ipynb # S1 : diagnostic catalogue CDSE, disponibilité mensuelle (sections 1–5)
 ├── src/
 │   ├── acquisition/          # Téléchargement S2, ingestion RPG
 │   ├── processing/           # Masque nuages, indices, composite
@@ -231,6 +235,23 @@ jupyter notebook notebooks/01_ingestion_rpg.ipynb
 > Le chargement PostGIS passe par le driver PGDUMP de GDAL + `psql`
 > (`ogr2ogr` et le driver PostgreSQL natif sont absents de cet environnement Windows).
 
+**Diagnostic disponibilité Sentinel-2 (sprint S1 — terminé)**
+
+```bash
+# Compte CDSE requis (voir ci-dessus). Credentials renseignés dans .env.
+jupyter notebook notebooks/02_disponibilite_s2.ipynb
+# Section 1 : authentification CDSE (OAuth, rafraîchissement token)
+# Section 2 : requête catalogue OData — 4 tuiles, pagination, sans filtre nuage
+# Section 3 : structuration DataFrame (pair, date, cloud_cover_catalogue, f_valid_aoi)
+# Section 4 : déduplication par baseline + statistiques mensuelles (partiel / quasi complet)
+# Section 5 : histogramme de disponibilité + AVAILABILITY_REPORT.json
+```
+
+> Diagnostic catalogue pur — aucune image téléchargée.
+> La colonne `f_valid_aoi` est provisionnée à `NaN` ; elle sera calculée en sprint S2
+> par téléchargement de la bande SCL (60 m) et calcul de la fraction de pixels valides
+> sur l'AOI (classes SCL invalides : 3, 8, 9, 10, 11).
+
 ---
 
 ## Résultats intermédiaires
@@ -259,6 +280,24 @@ RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
 > filtre AOI, pour qu'aucune parcelle invalide ne soit silencieusement exclue sans trace.
 
 <!-- S1 suite : ajouter ici l'histogramme de disponibilité S2 -->
+
+**S1 — Disponibilité Sentinel-2 (terminée)**
+
+Catalogue CDSE, 4 tuiles (30UYA · 31UCR · 30UYV · 31UCQ), fenêtre sept. 2023 → déc. 2024 :
+
+| Indicateur | Valeur |
+|---|---|
+| Scènes catalogue brutes (4 tuiles) | *à compléter après exécution* |
+| Scènes après déduplication (baseline le plus récent) | *à compléter* |
+| Jours couverts — couverture partielle (≥ 1 tuile) | *à compléter* |
+| Jours couverts — quasi complète (nord ET sud) | *à compléter* |
+| Mois le plus creux | *à compléter* |
+
+> Aucun filtre de couverture nuageuse appliqué au catalogue — toutes les scènes L2A
+> disponibles sont recensées. La disponibilité effective sur l'AOI (`f_valid_aoi`)
+> sera calculée en sprint S2 à partir de la bande SCL.
+> Voir `data/raw/s2/AVAILABILITY_REPORT.json` pour le détail mensuel.
+
 <!-- S2 : ajouter ici un exemple de profil NDVI par parcelle -->
 <!-- S3 : ajouter ici la carte des cultures prédites et la matrice de confusion -->
 <!-- S4 : ajouter ici la carte de divergence et les métriques phéno -->
