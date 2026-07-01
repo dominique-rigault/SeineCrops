@@ -44,7 +44,7 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 | Sprint | Objectif | Statut |
 |---|---|---|
 | S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
-| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 RPG ingéré, validé, documenté · dispo S2 à venir |
+| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | 🔄 RPG ingéré, validé, documenté · dispo S2 en cours |
 | S2 — Séries | Indices, composite mensuel, table spatio-temporelle | ⬜ |
 | S3 — Classification | Baseline RF, évaluation, option DL | ⬜ |
 | S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ⬜ |
@@ -169,15 +169,45 @@ pip install -r requirements.txt
 pre-commit install
 ```
 
+**Compte Copernicus Data Space Ecosystem (CDSE)**
+
+Un compte gratuit est nécessaire pour interroger le catalogue Sentinel-2 et
+télécharger les produits L2A (sprint S2 et suivants).
+
+1. S'inscrire sur [dataspace.copernicus.eu](https://dataspace.copernicus.eu)
+2. Confirmer l'adresse e-mail (lien envoyé par CDSE)
+3. Se connecter une première fois sur le portail et accepter les conditions d'utilisation
+4. Renseigner les credentials dans `.env` (voir ci-dessous)
+
+> Sans l'étape 3, l'API retourne `invalid_grant / Account is not fully set up`.
+
+**Variables d'environnement (`.env`)**
+
+Copier `.env.example` et renseigner toutes les variables avant d'exécuter les notebooks :
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Description |
+|---|---|
+| `PG_HOST` | Hôte PostgreSQL (ex. `localhost`) |
+| `PG_PORT` | Port PostgreSQL (ex. `5432`) |
+| `PG_DB` | Nom de la base (ex. `seinecrops`) |
+| `PG_USER` | Utilisateur PostgreSQL |
+| `PG_PASSWORD` | Mot de passe PostgreSQL |
+| `CDSE_USER` | Adresse e-mail du compte CDSE |
+| `CDSE_PASSWORD` | Mot de passe du compte CDSE |
+
+> Le fichier `.env` n'est pas versionné (listé dans `.gitignore`).
+> Ne jamais committer de credentials en clair.
+
 **Base PostGIS**
 
 ```bash
 # Créer la base et activer PostGIS + schémas (raw, derived)
 psql -U postgres -c "CREATE DATABASE seinecrops;"
 psql -U postgres -d seinecrops -f src/db/init.sql
-
-# Configurer les identifiants de connexion (non versionné)
-cp .env.example .env   # puis renseigner PG_PASSWORD
 ```
 
 **Ingestion RPG (sprint S1 — terminée)**

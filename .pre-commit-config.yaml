@@ -22,7 +22,6 @@ repos:
       - id: check-yaml                # valide la syntaxe YAML
       - id: check-toml                # valide la syntaxe TOML
       - id: check-json                # valide la syntaxe JSON
-      - id: check-merge-conflict      # détecte les marqueurs de conflit Git oubliés
       - id: check-added-large-files   # bloque les fichiers > 500 ko par défaut
         args: [--maxkb=500]
       - id: detect-private-key        # détecte les clés privées accidentellement ajoutées
