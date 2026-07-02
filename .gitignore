@@ -34,6 +34,7 @@ data/raw/**/*.7z
 data/raw/**/*.zip
 data/raw/**/*.pdf
 data/raw/**/*.sql
+data/raw/**/*.parquets
 data/raster/                  # Tuiles Sentinel-2 téléchargées
 data/vector/                  # Fichiers vecteur lourds
 
