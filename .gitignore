@@ -35,6 +35,7 @@ data/raw/**/*.zip
 data/raw/**/*.pdf
 data/raw/**/*.sql
 data/raw/**/*.parquet
+data/raw/s2/scl/
 data/raw/**/*.png
 
 # ── Formats raster ────────────────────────────────────────────────────────────
