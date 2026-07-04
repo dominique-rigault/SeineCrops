@@ -34,9 +34,8 @@ data/raw/**/*.7z
 data/raw/**/*.zip
 data/raw/**/*.pdf
 data/raw/**/*.sql
-data/raw/**/*.parquets
-data/raster/                  # Tuiles Sentinel-2 téléchargées
-data/vector/                  # Fichiers vecteur lourds
+data/raw/**/*.parquet
+data/raw/**/*.png
 
 # ── Formats raster ────────────────────────────────────────────────────────────
 *.tif
@@ -47,14 +46,24 @@ data/vector/                  # Fichiers vecteur lourds
 *.hdf5
 
 # ── Formats vecteur ───────────────────────────────────────────────────────────
-*.gpkg
-*.gpkg-shm
-*.gpkg-wal
+# GeoPackage : exclure sauf sentinel2_4tuiles_2154.gpkg (104 Ko, versionné)
+data/raw/**/*.gpkg
+data/vector/**/*.gpkg
+!data/vector/s2_tiles/sentinel2_4tuiles_2154.gpkg
+
+# Shapefiles (données intermédiaires non versionnées)
 *.shp
 *.shx
 *.dbf
 *.prj
 *.cpg
+*.sbn
+*.sbx
+*.gpkg-shm
+*.gpkg-wal
+
+# Fichiers texte auxiliaires non versionnés
+data/vector/**/*.txt
 
 # ── QGIS ──────────────────────────────────────────────────────────────────────
 *.qgz
@@ -77,6 +86,7 @@ models/*.h5
 !models/*.yaml
 
 # ── Notebooks — sorties et checkpoints ───────────────────────────────────────
+util.ipynb
 notebooks/.ipynb_checkpoints/
 # Les notebooks eux-mêmes sont versionnés (sorties nettoyées avant commit)
 

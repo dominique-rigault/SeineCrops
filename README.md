@@ -57,9 +57,8 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 
 - **AOI** : Pays de Caux + plateau du Neubourg (Eure), de part et d'autre
   de la Seine, de la pointe du Havre au sud du Neubourg — openfield grandes
-  cultures, hors bocage et fonds de vallées (exclusion par type de culture
-  déclaré, pas par découpe géométrique). Surface mesurée : **3 349 km²**
-  (80 689 parcelles), 1–2 tuiles Sentinel-2.
+  cultures. Surface mesurée : **3 349 km²** (80 689 parcelles), 4 tuiles
+  Sentinel-2 (30UYA · 31UCR · 30UYV · 31UCQ).
 - **Période** : septembre N → décembre N+1 (~16 mois, campagne RPG N+1).
 - **Cultures cibles** : blé tendre, orge, colza, maïs, betterave, lin, prairies, autres.
 
@@ -114,19 +113,22 @@ SeineCrops/
 │   │   ├── rpg/
 │   │   │   └── 2024/
 │   │   │       ├── R28/
-│   │   │       │   ├── SOURCE.json          # traçabilité : source, licence, SHA-256
-│   │   │       │   ├── RECON.json           # inventaire : couches, stats, emprise
-│   │   │       │   ├── DB.json              # versions PostgreSQL / PostGIS, schémas
-│   │   │       │   ├── INGESTION_REPORT.json # rapport de clôture consolidé
-│   │   │       │   └── RPG_3-0__GPKG_…/    # archive décompressée (non versionnée)
+│   │   │       │   ├── SOURCE.json               # traçabilité : source, licence, SHA-256
+│   │   │       │   ├── RECON.json                # inventaire : couches, stats, emprise
+│   │   │       │   ├── DB.json                   # versions PostgreSQL / PostGIS, schémas
+│   │   │       │   ├── INGESTION_REPORT.json     # rapport de clôture consolidé
+│   │   │       │   └── RPG_3-0__GPKG_…/          # archive décompressée (non versionnée)
 │   │   │       └── _referentiels/
 │   │   │           └── codes_cultures_2024.csv
 │   │   └── s2/
-│   │       ├── AVAILABILITY_REPORT.json     # rapport de clôture disponibilité S2
-│   │       └── availability_s2.png          # histogramme mensuel (non versionné)
+│   │       ├── AVAILABILITY_REPORT.json          # rapport de clôture disponibilité S2
+│   │       ├── availability_s2.png               # histogramme mensuel (non versionné)
+│   │       └── catalogue_dedup.parquet           # catalogue dédupliqué + f_valid_aoi (non versionné)
 │   └── vector/
-│       └── aoi/
-│           └── aoi_seinecrops.geojson       # AOI Caux + Neubourg (dessinée QGIS)
+│       ├── aoi/
+│       │   └── aoi_seinecrops.geojson            # AOI Caux + Neubourg (dessinée QGIS)
+│       └── s2_tiles/
+│           └── sentinel2_4tuiles_2154.gpkg       # emprise des 4 tuiles Sentinel-2 (EPSG:2154)
 ├── divergence/
 ├── docs/                     # Dictionnaire de données, schéma PostGIS
 ├── notebooks/
@@ -308,7 +310,7 @@ Catalogue CDSE, 4 tuiles (30UYA · 31UCR · 30UYV · 31UCQ), fenêtre sept. 2023
 ## Documentation
 
 - [Cadrage du projet](./cadrage/SeineCrops_cadrage.pdf)
-- [Note de méthode](./cadrage/methode.md) *(à venir)*
+- [Note de méthode](./cadrage/methode.md)
 - [Dictionnaire de données PostGIS](./docs/dictionnaire.md) *(à venir)*
 - [Référence API](./docs/api.md) *(à venir — générée par FastAPI/OpenAPI)*
 

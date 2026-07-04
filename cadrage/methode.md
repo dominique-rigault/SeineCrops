@@ -46,6 +46,8 @@ Le projet est piloté par six questions d'ingénierie mesurables : robustesse au
 
 **Dépôt** : GitHub public, MIT pour le code, CC-BY 4.0 pour la documentation. Séparation stricte code/données : les données lourdes ne sont pas versionnées ; leur traçabilité est assurée par des fichiers JSON (SHA-256, provenance, versions).
 
+**Grille des tuiles Sentinel-2** : index shapefile téléchargé depuis [justinelliotmeyers/Sentinel-2-Shapefile-Index](https://github.com/justinelliotmeyers/Sentinel-2-Shapefile-Index), converti en GeoPackage (EPSG:2154) et stocké dans `data/vector/s2_tiles/s2_tiles_2154.gpkg`. Utilisé pour la visualisation du recouvrement des 4 tuiles sur l'AOI.
+
 ---
 
 ### S1 — Données
