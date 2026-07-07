@@ -125,7 +125,11 @@ Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) 
 
 **Statistiques** : pour chaque parcelle RPG × mois × variable, quatre statistiques zonales sont calculées sur les pixels valides du composite : mean, std, p10, p90. La combinaison mean + std capture la tendance centrale et l'hétérogénéité intra-parcelle. p10/p90 enrichissent le feature set pour la classification sans surcoût significatif.
 
-**Table PostGIS** : `derived.s2_parcelles_monthly` (clé primaire composite `id_parcel × mois × variable`). La volumétrie cible est d'environ 56 millions de lignes (80 689 parcelles × 704 combinaisons). Les insertions utilisent `ON CONFLICT DO UPDATE` pour permettre les relances partielles.
+**Méthode** : les 80 683 parcelles (après dissolve des 6 doublons `id_parcel`) sont rasterisées en un raster de labels sur la grille AOI (20 m, EPSG:2154), construit une seule fois. Pour chaque composite, les statistiques sont calculées par tri vectorisé numpy (argsort + split par label) — O(n log n) sur les pixels valides, sans appel rasterio.mask par parcelle. 2 751 parcelles (0,023 % de la surface) ne capturent aucun centre de pixel à 20 m et sont absentes de la table.
+
+**Table PostGIS** : `derived.s2_parcelles_monthly` (clé primaire composite `id_parcel × mois × variable`). Volumétrie : 13 716 032 lignes (77 932 parcelles × 11 variables × 16 mois). Les insertions utilisent `INSERT ... ON CONFLICT DO NOTHING` pour permettre les relances partielles — si un composite est régénéré, supprimer les lignes du mois × variable concerné avant relance.
+
+**Correction EVI août 2024** : le dénominateur EVI (B08 + 6×B04 − 7,5×B02 + 1) devenait instable en pleine végétation estivale. Corrigé par un garde-fou `np.where(abs(denom) < 0.001, 0.001, denom)`. Le composite d'août a été recalculé directement depuis les composites de bandes (ratio des médianes et non médiane des ratios — écart négligeable sur un indice normalisé).
 
 ---
 

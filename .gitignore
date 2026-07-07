@@ -27,6 +27,9 @@ credentials.json
 cdse_credentials.*
 sentinelhub_config.*
 
+# ── Documents de communicatrion ───────────────────────────────────────────────────
+docs/
+
 # ── Données brutes (volumineuses, non redistribuées) ─────────────────────────
 # Règle : exclure par type de fichier, PAS par dossier entier
 # (ignorer un dossier entier neutralise les négations !... sur son contenu)
