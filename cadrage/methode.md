@@ -82,8 +82,7 @@ Le projet est piloté par six questions d'ingénierie mesurables : robustesse au
 
 #### S2.1 — Masque nuages et sélection des scènes (`f_valid_aoi`)
 
-**SCL** : la bande Scene Classification Layer (60 m) du produit L2A Sen2Cor classe chaque pixel en 12 catégories. Les classes invalides retenues sont 3 (ombres nuageuses), 8 (nuages moyennement probables), 9 (nuages hautement probables), 10 (cirrus) et 11 (neige/glace).
-Classes 1 (pixels saturés) et 7 (nuages bas, probabilité faible) identifiées comme devant être ajoutées à SCL_INVALIDES — non appliqué sur la campagne 2024, à intégrer en priorité pour une prochaine acquisition. Cette liste suivra alors les recommandations HR-VPP/Sen4CAP.
+**SCL** : la bande Scene Classification Layer (60 m) du produit L2A Sen2Cor classe chaque pixel en 12 catégories. Les classes invalides retenues sont 1 (pixels saturés/défectueux), 3 (ombres nuageuses), 7 (nuages bas, probabilité faible), 8 (nuages moyennement probables), 9 (nuages hautement probables), 10 (cirrus) et 11 (neige/glace) — conformément aux recommandations HR-VPP/Sen4CAP. La classe 7 est particulièrement utile en contexte normand où les nuages bas d'automne-hiver sont fréquemment sous-détectés par l'algorithme SCL.
 
 **`f_valid_aoi`** : pour chaque scène, fraction de pixels valides (hors classes invalides) dans l'emprise de l'AOI. Calculée en reprojetant l'AOI dans le CRS de la SCL (UTM dérivé du `tile_id` : EPSG 32600 + numéro de zone, car le driver JP2OpenJPEG ne renseigne pas toujours le CRS dans les métadonnées). Seuil de rétention : `f_valid_aoi ≥ 0.01` (au moins 1 % de pixels valides sur l'AOI). Ce seuil très permissif permet de conserver le maximum de scènes tout en éliminant celles entièrement couvertes de nuages — le composite mensuel par médiane gère la qualité résiduelle.
 
@@ -93,20 +92,22 @@ Classes 1 (pixels saturés) et 7 (nuages bas, probabilité faible) identifiées 
 
 #### S2.2 — Téléchargement des bandes spectrales et calcul des indices
 
-**Bandes retenues** : B02 (bleu, 10 m), B04 (rouge, 10 m), B05 (red-edge 1, 20 m), B06 (red-edge 2, 20 m), B07 (red-edge 3, 20 m), B08 (PIR large, 10 m), B11 (SWIR 1, 20 m). Les bandes à 20 m sont resamplées à 10 m par interpolation bilinéaire (`rasterio.warp.reproject`), sur la grille de référence définie par B02 après découpe AOI.
+**Bandes retenues** : B02 (bleu, 10 m), B04 (rouge, 10 m), B05 (red-edge 1, 20 m), B06 (red-edge 2, 20 m), B07 (red-edge 3, 20 m), B08 (PIR large, 10 m), B11 (SWIR 1, 20 m). Toutes les bandes sont resamplées à **20 m** par interpolation bilinéaire (`rasterio.warp.reproject`, mode array-to-array pour contourner le bug JP2OpenJPEG/Windows), sur la grille de référence définie par B05 (natif 20 m) après découpe AOI.
 
 **Découpe AOI** : appliquée dès la lecture (`rasterio.mask.mask` avec `crop=True`) pour ne charger en mémoire que les pixels dans l'emprise de l'AOI — indispensable pour maîtriser l'empreinte mémoire sur des tuiles de 110 × 110 km.
+
+**Masque SCL pixel à pixel** : pour chaque scène retenue, la SCL (60 m) est reprojetée sur la grille AOI 20 m (`Resampling.nearest`, obligatoire pour une couche catégorielle) et les pixels des classes invalides (1, 3, 7, 8, 9, 10, 11) sont mis à NaN sur toutes les bandes avant le calcul des indices. Ce masquage per-pixel est distinct et complémentaire du filtre de sélection `f_valid_aoi` qui opère à l'échelle de la scène entière.
 
 **Indices spectraux** :
 
 | Indice | Formule | Intérêt |
 |--------|---------|---------|
 | NDVI | (B08 − B04) / (B08 + B04) | Vigueur végétale, phénologie |
-| EVI | 2.5 × (B08 − B04) / (B08 + 6×B04 − 7.5×B02 + 1) | Vigueur sans saturation |
+| EVI | 2.5 × (B08 − B04) / (B08 + 6×B04 − 7.5×B02 + 1) | Vigueur végétale, résiste à la saturation du NDVI en été |
 | NDWI | (B08 − B11) / (B08 + B11) | Teneur en eau foliaire et du sol |
-| NDRE | (B08 − B05) / (B08 + B05) | Discrimination cultures avant saturation NDVI |
+| NDRE | (B08 − B05) / (B08 + B05) | Prend le relais du NDVI en pleine saison végétative, quand celui-ci plafonne et perd son pouvoir discriminant |
 
-Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) et clampées dans [-1, 1] ([-2, 2] pour l'EVI). Les GeoTIFF sont sauvegardés en Float32, compressés Deflate, tuiles 256 × 256.
+Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) et clampées dans [-1, 1] ([-2, 2] pour l'EVI). Le dénominateur EVI est stabilisé par un garde-fou `np.where(abs(denom) < 0.001, 0.001, denom)` pour éviter les instabilités numériques en période de forte végétation estivale. Les GeoTIFF sont sauvegardés en Float32, compressés Deflate, tuiles 256 × 256.
 
 **Contraintes Windows** : `ThreadPoolExecutor` provoque des blocages de sockets (`WinError 10013`) au-delà de 2-4 workers simultanés sur Windows en raison des limites du pare-feu et du pool de connexions. La boucle de téléchargement est séquentielle pour garantir la stabilité.
 
@@ -177,7 +178,7 @@ Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) 
 | RPG comme vérité terrain | Enquêtes terrain | Open data national, couvre 100 % des parcelles, mise à jour annuelle |
 | Seuil `f_valid_aoi ≥ 0.01` | Seuil ≥ 0.20 (HR-VPP) | Normandie nuageuse : un seuil strict éliminerait trop de scènes automnales ; le composite médiane absorbe la qualité résiduelle |
 | Composite mensuel médiane | Meilleur pixel (best-pixel) | Plus simple, plus robuste, standard HR-VPP/Sen4CAP |
-| Résolution 10 m (resample 20 m → 10 m) | Tout à 20 m | Parcelles moyennes à 3,6 ha : 10 m apporte de la résolution intra-parcelle utile pour std/p10/p90 |
+| Résolution 20 m (résolution native des bandes 20 m, resample 10 m → 20 m) | Tout à 10 m | Cohérence avec la résolution native de la majorité des bandes (B05, B06, B07, B11) ; évite une sur-résolution artificielle des bandes 10 m qui n'apporterait pas d'information supplémentaire pour les statistiques zonales à l'échelle de la parcelle |
 | `ST_Intersects` pour filtre AOI | `ST_Intersection` (découpe) | Cohérence phénologique : une parcelle tronquée perd une partie de ses pixels et biaise les stats zonales |
 | QA géométrique avant filtre AOI | QA après filtre | Une parcelle invalide dans l'AOI doit être réparée ou tracée, pas silencieusement exclue |
 | Boucle séquentielle (téléchargement) | `ThreadPoolExecutor` | Instabilité réseau Windows (`WinError 10013`) avec plusieurs workers simultanés |
@@ -189,7 +190,7 @@ Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) 
 
 **Optique seule** : pas de fusion radar Sentinel-1. La couverture nuageuse normande est gérée par masquage SCL, composite temporel et indicateur `f_valid_aoi`, mais les mois d'hiver restent sous-représentés. L'ajout de Sentinel-1 (cohérence, rétrodiffusion) est une perspective naturelle.
 
-**Résolution 10-20 m** : comme le 3STR, la chaîne ne distingue ni les petites parcelles (< 0,5 ha) ni les cultures en mélange. C'est une limite intrinsèque de Sentinel-2.
+**Résolution 20 m** : comme le 3STR, la chaîne ne distingue ni les petites parcelles (< 0,5 ha) ni les cultures en mélange. C'est une limite intrinsèque de Sentinel-2 à cette résolution.
 
 **Vérité terrain RPG** : le RPG enregistre la culture déclarée, pas la culture réellement implantée. Les erreurs de déclaration sont traitées comme du bruit dans la classification et comme du signal dans la détection de divergence.
 
