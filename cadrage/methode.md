@@ -82,7 +82,8 @@ Le projet est piloté par six questions d'ingénierie mesurables : robustesse au
 
 #### S2.1 — Masque nuages et sélection des scènes (`f_valid_aoi`)
 
-**SCL** : la bande Scene Classification Layer (60 m) du produit L2A Sen2Cor classe chaque pixel en 12 catégories. Les classes invalides retenues sont 3 (ombres nuageuses), 8 (nuages moyennement probables), 9 (nuages hautement probables), 10 (cirrus) et 11 (neige/glace). Cette liste suit les recommandations HR-VPP/Sen4CAP.
+**SCL** : la bande Scene Classification Layer (60 m) du produit L2A Sen2Cor classe chaque pixel en 12 catégories. Les classes invalides retenues sont 3 (ombres nuageuses), 8 (nuages moyennement probables), 9 (nuages hautement probables), 10 (cirrus) et 11 (neige/glace).
+Classes 1 (pixels saturés) et 7 (nuages bas, probabilité faible) identifiées comme devant être ajoutées à SCL_INVALIDES — non appliqué sur la campagne 2024, à intégrer en priorité pour une prochaine acquisition. Cette liste suivra alors les recommandations HR-VPP/Sen4CAP.
 
 **`f_valid_aoi`** : pour chaque scène, fraction de pixels valides (hors classes invalides) dans l'emprise de l'AOI. Calculée en reprojetant l'AOI dans le CRS de la SCL (UTM dérivé du `tile_id` : EPSG 32600 + numéro de zone, car le driver JP2OpenJPEG ne renseigne pas toujours le CRS dans les métadonnées). Seuil de rétention : `f_valid_aoi ≥ 0.01` (au moins 1 % de pixels valides sur l'AOI). Ce seuil très permissif permet de conserver le maximum de scènes tout en éliminant celles entièrement couvertes de nuages — le composite mensuel par médiane gère la qualité résiduelle.
 
