@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-02T08:09:07.265186+00:00",
+  "generated_at": "2026-07-10T08:23:18.367158+00:00",
   "annee_reference": 2024,
   "fenetre": {
     "start": "2023-09-01T00:00:00.000Z",
@@ -41,9 +41,9 @@
     ]
   },
   "catalogue": {
-    "scenes_brutes": 1130,
+    "scenes_brutes": 1145,
     "scenes_dedup": 1071,
-    "doublons_supprimes": 59,
+    "doublons_supprimes": 74,
     "filtre_nuage": null
   },
   "disponibilite": {

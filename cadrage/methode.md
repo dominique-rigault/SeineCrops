@@ -32,7 +32,7 @@ Le feature set d'entrée du modèle compte **704 features par parcelle** : 11 va
 
 ### Critères de succès
 
-Le projet est piloté par six questions d'ingénierie mesurables : robustesse au manque d'observations nuageuses (profil reconstruit pour ≥ 90 % des parcelles), qualité de classification (F1 macro ≥ 0,80 sur les grandes cultures), gain du deep learning sur la baseline, fiabilité des alertes de divergence, absence de fuite spatiale dans l'évaluation, et reproductibilité de la chaîne.
+Le projet est piloté par six questions d'ingénierie mesurables : robustesse au manque d'observations nuageuses (profil reconstruit pour ≥ 90 % des parcelles), qualité de classification (F1 macro ≥ 0,85 sur les grandes cultures), gain du deep learning sur la baseline, fiabilité des alertes de divergence, absence de fuite spatiale dans l'évaluation, et reproductibilité de la chaîne.
 
 ---
 
@@ -139,7 +139,7 @@ Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) 
 
 **Baseline** : Random Forest scikit-learn, split spatial par blocs (pas de split aléatoire qui créerait une fuite spatiale entre parcelles voisines). Features : les 704 colonnes de `derived.s2_parcelles_monthly` pivotées en wide format par parcelle. Cibles : les codes cultures RPG regroupés en 7-8 classes (blé tendre, orge, colza, maïs, betterave, lin, prairies, autres).
 
-**Évaluation** : matrice de confusion, F1 macro et par classe, avec attention portée aux classes minoritaires. Cible indicative F1 macro ≥ 0,80 sur les grandes cultures.
+**Évaluation** : matrice de confusion, F1 macro et par classe, avec attention portée aux classes minoritaires. Cible indicative F1 macro ≥ 0,85 sur les grandes cultures.
 
 **Option DL** : 1D-CNN ou LSTM sur la dimension temporelle (16 pas de temps), à envisager si la baseline ne satisfait pas les critères de validation. Le gain de performance sera mis en regard de la complexité supplémentaire.
 
