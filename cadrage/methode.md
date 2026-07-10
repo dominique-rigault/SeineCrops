@@ -133,6 +133,14 @@ Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) 
 
 **Correction EVI août 2024** : le dénominateur EVI (B08 + 6×B04 − 7,5×B02 + 1) devenait instable en pleine végétation estivale. Corrigé par un garde-fou `np.where(abs(denom) < 0.001, 0.001, denom)`. Le composite d'août a été recalculé directement depuis les composites de bandes (ratio des médianes et non médiane des ratios — écart négligeable sur un indice normalisé).
 
+#### S2.5 — Agrégation zonale NDVI aux dates d'acquisition
+
+**Motivation** : les composites mensuels (S2.4) écrasent la dynamique fine du couvert, ce qui limite la précision d'extraction des métriques phénologiques (SOS/POS/EOS, S4). En complément, un profil NDVI est agrégé par parcelle **à chaque date d'acquisition**, sans compositage temporel — un échantillonnage irrégulier (trous nuageux, densité orbitale variable) mais fidèle à la trajectoire réelle de la végétation.
+
+**Source** : les GeoTIFF NDVI par scène produits en S2.2 (déjà masqués SCL), reprojetés sur la grille AOI 20 m. Pour une date couverte par plusieurs tuiles, les scènes sont mosaïquées par médiane pixel à pixel (même logique que l'étape journalière du compositage S2.3). L'agrégation zonale réutilise le raster de labels et le tri vectorisé numpy de S2.4.
+
+**Table PostGIS** : `derived.s2_parcelles_ndvi_dates` (clé primaire composite `id_parcel × date`), colonnes `mean`, `std`, `n_pixels`. Le champ `n_pixels` compte les pixels valides ayant contribué à la statistique, et permet de filtrer les parcelles à faible couverture lors du lissage phénologique. Insertions en `ON CONFLICT DO NOTHING` pour les relances partielles.
+
 ---
 
 ### S3 — Classification *(prévu)*
