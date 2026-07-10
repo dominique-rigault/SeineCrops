@@ -23,7 +23,11 @@ Sont considérées comme vulnérabilités pertinentes :
 
 Merci de **ne pas ouvrir d'issue publique** pour les signalements de sécurité.
 
-Contactez-moi par email : **dominique.rigault@outlook.com**
+Deux options :
+
+1. **Via GitHub** (recommandé) : utilisez le bouton **"Report a vulnerability"**
+   dans l'onglet **Security** du dépôt. Cela crée un advisory privé avec suivi intégré.
+2. **Par email** : **dominique.rigault@outlook.com**, si vous n'avez pas de compte GitHub.
 
 Indiquez si possible :
 
