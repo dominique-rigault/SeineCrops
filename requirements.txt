@@ -20,12 +20,13 @@ geoalchemy2>=0.14             # Extension spatiale pour SQLAlchemy + PostGIS
 python-dotenv>=1.0            # Chargement des variables d'environnement (.env)
 
 # ── Accès données Copernicus (Sentinel-2) ─────────────────────────────────────
-sentinelhub>=3.9              # API Sentinel Hub (CDSE) — téléchargement et traitements cloud
+requests>=2.31                # Appels API OData CDSE (catalogue, téléchargement, token OAuth)
+# sentinelhub>=3.9            # Non utilisé : le pipeline appelle directement l'API OData CDSE via requests
 # openeo>=0.26                # Alternative : client openEO (décommenter si retenu)
 
 # ── Traitement scientifique ───────────────────────────────────────────────────
 numpy>=1.26
-scipy>=1.11                   # Lissage Savitzky-Golay (métriques phéno SOS/POS/EOS)
+scipy>=1.11                   # Stats zonales (S3), lissage Savitzky-Golay (S4, métriques phéno SOS/POS/EOS)
 pandas>=2.1
 
 # ── Machine learning ──────────────────────────────────────────────────────────
@@ -34,14 +35,14 @@ scikit-learn>=1.4             # Baseline Random Forest, métriques d'évaluation
 # keras>=3.0                  # Alternative DL (décommenter si retenu)
 
 # ── Masque nuages ─────────────────────────────────────────────────────────────
-s2cloudless>=1.7              # Masque nuages Sentinel-2 (complément à la bande SCL)
+# s2cloudless>=1.7            # Non utilisé : le masquage repose exclusivement sur la bande SCL L2A
 
-# ── API ───────────────────────────────────────────────────────────────────────
-fastapi>=0.110
-uvicorn[standard]>=0.29       # Serveur ASGI pour FastAPI
+# ── API (S5) ──────────────────────────────────────────────────────────────────
+# fastapi>=0.110              # Décommenter au sprint S5 (service)
+# uvicorn[standard]>=0.29     # Serveur ASGI pour FastAPI — décommenter au sprint S5
 
 # ── Visualisation & export ────────────────────────────────────────────────────
-matplotlib>=3.8               # Graphes, profils temporels
+matplotlib>=3.8               # Graphes, profils temporels, matrices de confusion
 folium>=0.16                  # Carte web légère (prototypage rapide)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
