@@ -191,7 +191,7 @@ Les valeurs sont normalisées (division par 10 000 pour passer en réflectance) 
 | QA géométrique avant filtre AOI | QA après filtre | Une parcelle invalide dans l'AOI doit être réparée ou tracée, pas silencieusement exclue |
 | Boucle séquentielle (téléchargement) | `ThreadPoolExecutor` | Instabilité réseau Windows (`WinError 10013`) avec plusieurs workers simultanés |
 | Split spatial par blocs (classification) | Split aléatoire | Le split aléatoire crée une fuite spatiale : des parcelles voisines se retrouvent en train et en test |
-
+| Format par nature de donnée (parquet métadonnées / GeoTIFF composites / PostGIS parcelles-séries) | Format unique (tout PostGIS ou tout fichiers plats) | Parquet pour le catalogue de scènes (lecture séquentielle, pas de requête spatiale) ; GeoTIFF pour les composites raster (accès fenêtré rasterio, interopérabilité QGIS) ; PostGIS pour les données vecteur/relationnelles nécessitant jointures, requêtes spatiales et relances partielles par clé composite |
 ---
 
 ## Limites documentées
