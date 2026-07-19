@@ -53,7 +53,7 @@ data/raw/**/*.png
 # GeoPackage : exclure sauf sentinel2_4tuiles_2154.gpkg (104 Ko, versionné)
 data/raw/**/*.gpkg
 data/vector/**/*.gpkg
-!data/vector/s2_tiles/sentinel2_4tuiles_2154.gpkg
+!data/vector/s2_tiles/s2_tiles_2154.gpkg
 
 # Shapefiles (données intermédiaires non versionnées)
 *.shp
@@ -113,3 +113,5 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+data/raw/s2/bands/
+data/raw/s2/indices/
