@@ -48,6 +48,7 @@ folium>=0.16                  # Carte web légère (prototypage rapide)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 pytest>=8.0
+pytest-asyncio>=0.23           # Support des tests `async def` (src/api/queries.py)
 pytest-cov>=5.0               # Couverture de tests
 
 # ── Développement (hooks) — ne pas installer en production ───────────────────
