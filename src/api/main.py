@@ -9,6 +9,7 @@ Documentation OpenAPI auto-générée : http://localhost:8000/docs
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
 from .queries import (
@@ -36,6 +37,16 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# Permissif pour le développement local (carte web servie depuis un port
+# différent de l'API). À restreindre à l'origine réelle avant tout
+# déploiement public (cf. methode.md §S5, Hors périmètre -> S6/perspectives).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
 
