@@ -39,15 +39,15 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 
 ## Statut
 
-> 🚧 **En cours de construction** — sprint S3 (classification)
+> 🚧 **En cours de construction** — sprint S5 (service : API + carte web)
 
 | Sprint | Objectif | Statut |
 |---|---|---|
 | S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
 | S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | ✅ |
 | S2 — Séries | Téléchargement SCL, indices, composite mensuel, table spatio-temporelle | ✅ |
-| S3 — Classification | Baseline RF, évaluation, option DL | ⬜ |
-| S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ⬜ |
+| S3 — Classification | Baseline RF, évaluation, option DL | ✅ |
+| S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ✅ |
 | S5 — Service | FastAPI + carte web | ⬜ |
 | S6 — Industrialisation | Airflow, tests, CI/CD, documentation | ⬜ |
 
@@ -136,7 +136,9 @@ SeineCrops/
 ├── notebooks/
 │   ├── 01_ingestion_rpg.ipynb    # S1 : acquisition RPG, PostGIS, filtre AOI, QA (sections 1–5)
 │   ├── 02_disponibilite_s2.ipynb # S1 : diagnostic catalogue CDSE, disponibilité mensuelle (sections 1–5)
-│   └── 03_series_s2.ipynb        # S2 : SCL, bandes, indices, composite mensuel, agrégation zonale (sections 3.1–3.4)
+│   ├── 03_series_s2.ipynb        # S2 : SCL, bandes, indices, composite mensuel, agrégation zonale (sections 3.1–3.4)
+│   ├── 04_classification.ipynb   # S3 : baseline RF, split spatial par blocs, évaluation (F1 macro 0,893)
+│   └── 05_divergence_pheno.ipynb # S4 : distance RMS standardisée, phénologie Whittaker SOS/POS/EOS (sections 5.1–5.4)
 ├── src/
 │   ├── acquisition/          # Téléchargement S2, ingestion RPG
 │   ├── processing/           # Masque nuages, indices, composite
@@ -144,7 +146,12 @@ SeineCrops/
 │   │   └── init.sql          # extension PostGIS, schémas raw / derived
 │   ├── ml/                   # Classification et détection de divergence
 │   ├── phenology/            # Métriques SOS/POS/EOS
-│   └── api/                  # FastAPI
+│   └── api/                  # FastAPI (S5)
+│       ├── __init__.py
+│       ├── db.py             # pool asyncpg, chargement .env, détection .projectroot
+│       ├── schemas.py        # modèles Pydantic (ParcelleDetail, ParcelleProfil)
+│       ├── queries.py        # requêtes SQL + assemblage ligne DB → modèle Pydantic
+│       └── main.py           # application FastAPI, routes /parcelles/{id}, /parcelles/{id}/profil
 ├── tests/                    # Tests unitaires et d'intégration
 ├── .env                      # identifiants PostGIS (non versionné)
 ├── .gitignore                # Exclusions du versionning
@@ -337,10 +344,56 @@ Table spatio-temporelle `derived.s2_parcelles_monthly` :
 > rasterisation. Correction EVI août 2024 : dénominateur instable en pleine
 > végétation, recalculé depuis les composites de bandes.
 
-<!-- S3 : ajouter ici la carte des cultures prédites et la matrice de confusion -->
-<!-- S3 : ajouter ici la carte des cultures prédites et la matrice de confusion -->
-<!-- S4 : ajouter ici la carte de divergence et les métriques phéno -->
+**S3 — Classification (terminé)**
+
+Baseline Random Forest (`n_estimators=300`, `max_depth=30`, `min_samples_leaf=5`,
+`class_weight="balanced"`), split spatial par blocs (75 blocs) :
+
+| Indicateur | Valeur |
+|---|---|
+| Split train / test | 61 043 / 16 889 parcelles (78,3 % / 21,7 %) |
+| F1 macro (8 classes) | **0,893** |
+| F1 macro hors `autres` (7 classes agronomiques) | **0,922** (cible ≥ 0,85 atteinte) |
+| Accuracy test / train | 0,881 / 0,941 (écart raisonnable) |
+| Classes les mieux discriminées | colza (F1 0,978), céréales d'hiver (0,962), betterave (0,960) |
+| Classe la plus faible | `autres` (F1 ≈ 0,68), confusion bidirectionnelle avec `prairie` |
+| Modèle retenu | baseline par défaut (`rf_base`), sans tuning ni features temporelles |
+
+> `RandomizedSearchCV` (20 itér., `cv=3`) testé et écarté : gain F1 macro nul (+0,001)
+> pour un surapprentissage aggravé (écart train/test 0,060 → 0,107), la CV interne
+> étant aveugle au split spatial par blocs. Trois features temporelles dérivées
+> (amplitude NDVI, jour du maximum, pente mai→août) testées et écartées également :
+> gain nul, la confusion `autres`/`prairie` se redistribue sans se réduire — indice
+> d'un problème de qualité de label RPG plutôt que de feature manquante.
+
+**S4 — Divergence & phénologie (terminé)**
+
+Distance RMS standardisée (z-score) au profil médian de classe ; lissage Whittaker
+pondéré (λ=800) pour SOS/POS/EOS/LOS, fenêtres calendaires par classe :
+
+| Indicateur | Valeur |
+|---|---|
+| Parcelles divergentes | 2 420 / 77 932 (3,1 %) |
+| Persistance | `derived.divergence`, `derived.phenologie` (upsert `ON CONFLICT DO UPDATE`) |
+
+| Classe | % LOS réaliste / conforme |
+|---|---:|
+| lin | 75 % |
+| maïs | 74 % |
+| betterave | 72 % |
+| colza | 66 % |
+| légumes/fleurs | 62 % |
+| céréales d'hiver | 60 % |
+| autres | 33 % |
+| prairie | 24 % |
+
+> `autres` et `prairie` n'ont pas de fenêtre calendaire calibrée (couvert pérenne /
+> classe hétérogène) : la notion de "LOS typique" y est mal posée par construction,
+> pas un échec de méthode. Flag `zone_raccord_orbital` ajouté pour isoler la bande
+> de divergence structurelle liée au raccord orbital 51/94 sur la tuile 30UYV.
+
 <!-- S5 : ajouter ici le lien vers la démo interactive -->
+<!-- S6 : ajouter ici les métriques d'industrialisation (CI, temps de traitement) -->
 
 ---
 
