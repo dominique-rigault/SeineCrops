@@ -270,7 +270,7 @@ Calculé avec les fenêtres avant le dernier ajustement de `jmin`/`jmax` sur `ce
 
 ---
 
-### S5 — Service *(brouillon — à valider avant code)*
+### S5 — Service *(terminé)*
 
 **Objectif** : exposer les résultats de S1-S4 (RPG, classification, divergence, phénologie), déjà persistés en PostGIS, via une API FastAPI et une carte web interactive. Aucun nouveau calcul scientifique dans ce sprint — uniquement de la restitution.
 
@@ -410,9 +410,18 @@ Code validé en notebook (`06_api.ipynb` §6.1-6.4) porté vers 4 modules, sépa
 - **PROJ** : si des opérations spatiales au-delà d'un simple `ST_AsGeoJSON` sont nécessaires côté API (reprojection à la volée, calculs de distance), reprendre la même précaution que dans le pipeline (WKT plutôt qu'EPSG codes) pour éviter le conflit PostgreSQL/pyproj déjà documenté.
 - **Cohérence des NULL** : les parcelles `autres`/`prairie` sans fenêtre phénologique calibrée (cf. limites S4) renverront `sos`/`pos`/`eos` à `null` — à documenter explicitement dans l'OpenAPI (`description` du champ), pas seulement dans `methode.md`, pour qu'un consommateur externe de l'API ne l'interprète pas comme une donnée manquante par erreur.
 
+#### Carte web (`web/index.html`)
+
+MapLibre GL JS, fond de carte OpenStreetMap en raster (pas de clé API — cohérent avec l'exigence de reproductibilité, QI6 du cadrage). Fichier HTML/CSS/JS unique, sans étape de build.
+
+- **Chargement dynamique** : `GET /parcelles?bbox=` rappelé à chaque `moveend`, avec la vue courante (`map.getBounds()`) comme bbox. La vue initiale (AOI complète, ~10 660 km²) déclenche volontairement le refus `HTTP 400` — géré comme un état normal ("zoomez pour voir les parcelles"), pas comme une erreur, puisque `BBOX_MAX_AREA_KM2 = 50` rend ce cas systématique au premier chargement.
+- **Palette des classes** : couleurs liées aux cultures réelles plutôt qu'une palette catégorielle arbitraire — jaune colza (couleur de floraison), bleu-lilas lin (fleurs bleues), bordeaux betterave, etc. Contour rouge distinct (`--couleur-alerte`) pour les parcelles `divergente`, indépendant de la couleur de classe.
+- **Panneau de détail** : au clic sur une parcelle, appel parallèle (`Promise.all`) à `GET /parcelles/{id}` et `GET /parcelles/{id}/profil`, affichage de la fiche complète et d'un graphique NDVI (Chart.js) avec les mois manquants représentés comme des trous (`spanGaps: false`), cohérent avec la sémantique "absence de ligne, pas `NULL`" documentée plus haut.
+- **CORS** : `CORSMiddleware` ajouté à `main.py`, permissif (`allow_origins=["*"]`) pour le développement local uniquement — à restreindre avant tout déploiement public (cf. Hors périmètre ci-dessous).
+
 #### Hors périmètre S5 *(reporté à S6 ou perspectives)*
 
-Déploiement (Docker, hébergement), authentification/rate-limiting, cache de requêtes, tuiles vectorielles `ST_AsMVT`.
+Déploiement (Docker, hébergement), authentification/rate-limiting, cache de requêtes, tuiles vectorielles `ST_AsMVT`, restriction CORS à l'origine réelle de déploiement.
 
 ---
 

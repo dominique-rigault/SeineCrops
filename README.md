@@ -39,7 +39,7 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 
 ## Statut
 
-> 🚧 **En cours de construction** — sprint S5 (service : API + carte web)
+> 🚧 **En cours de construction** — sprint S6 (industrialisation)
 
 | Sprint | Objectif | Statut |
 |---|---|---|
@@ -48,7 +48,7 @@ Copernicus CDSE ──► [Acquisition · Rasterio]
 | S2 — Séries | Téléchargement SCL, indices, composite mensuel, table spatio-temporelle | ✅ |
 | S3 — Classification | Baseline RF, évaluation, option DL | ✅ |
 | S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ✅ |
-| S5 — Service | FastAPI + carte web | ⬜ |
+| S5 — Service | FastAPI + carte web | ✅ |
 | S6 — Industrialisation | Airflow, tests, CI/CD, documentation | ⬜ |
 
 ---
@@ -151,8 +151,15 @@ SeineCrops/
 │       ├── db.py             # pool asyncpg, chargement .env, détection .projectroot
 │       ├── schemas.py        # modèles Pydantic (ParcelleDetail, ParcelleProfil)
 │       ├── queries.py        # requêtes SQL + assemblage ligne DB → modèle Pydantic
-│       └── main.py           # application FastAPI, routes /parcelles/{id}, /parcelles/{id}/profil
-├── tests/                    # Tests unitaires et d'intégration
+│       └── main.py           # application FastAPI, routes /parcelles/{id}, /parcelles/{id}/profil, /parcelles?bbox=
+├── web/
+│   └── index.html            # carte web MapLibre (S5) — fond OSM, couche parcelles, panneau de détail + graphique NDVI
+├── tests/
+│   ├── conftest.py
+│   └── api/
+│       ├── conftest.py       # fixture de connexion asyncpg
+│       ├── test_queries.py             # tests unitaires (logique pure)
+│       └── test_queries_integration.py # tests d'intégration PostGIS
 ├── .env                      # identifiants PostGIS (non versionné)
 ├── .gitignore                # Exclusions du versionning
 ├── .pre-commit-config.yaml
@@ -392,7 +399,22 @@ pondéré (λ=800) pour SOS/POS/EOS/LOS, fenêtres calendaires par classe :
 > pas un échec de méthode. Flag `zone_raccord_orbital` ajouté pour isoler la bande
 > de divergence structurelle liée au raccord orbital 51/94 sur la tuile 30UYV.
 
-<!-- S5 : ajouter ici le lien vers la démo interactive -->
+**S5 — Service (terminé)**
+
+FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de build :
+
+| Indicateur | Valeur |
+|---|---|
+| Endpoints | `GET /parcelles/{id}`, `GET /parcelles/{id}/profil`, `GET /parcelles?bbox=`, `GET /health` |
+| Tests | 9 tests d'intégration PostGIS + 2 tests unitaires (`pytest`) |
+| `BBOX_MAX_AREA_KM2` / `limit` | 50 km² / 2000 — mesurés sur la densité réelle de parcelles (24,1/km²) |
+| Tolérance de simplification géométrique | 5 m (médiane 18 → 7 sommets/parcelle) |
+| Carte web | fond OSM (raster, sans clé API), couleurs liées aux cultures réelles (colza jaune, lin bleu…), panneau de détail + graphique NDVI au clic |
+
+> Pagination par `offset` volontairement non implémentée (cf. `methode.md` §S5) — le
+> geste naturel d'une carte interactive est de réduire le `bbox` (zoom/déplacement),
+> pas de paginer une même zone.
+
 <!-- S6 : ajouter ici les métriques d'industrialisation (CI, temps de traitement) -->
 
 ---
