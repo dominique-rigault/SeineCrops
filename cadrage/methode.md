@@ -270,11 +270,149 @@ Calculé avec les fenêtres avant le dernier ajustement de `jmin`/`jmax` sur `ce
 
 ---
 
-### S5 — Service *(prévu)*
+### S5 — Service *(brouillon — à valider avant code)*
 
-**API** : FastAPI exposant pour chaque parcelle son identifiant RPG, sa classe prédite, son score de confiance, son score de divergence et ses métriques phénologiques. Documentation auto-générée via OpenAPI.
+**Objectif** : exposer les résultats de S1-S4 (RPG, classification, divergence, phénologie), déjà persistés en PostGIS, via une API FastAPI et une carte web interactive. Aucun nouveau calcul scientifique dans ce sprint — uniquement de la restitution.
 
-**Carte web** : MapLibre GL JS ou Leaflet, fond de carte Copernicus/IGN, clic parcelle → profil NDVI temporel + classe + statut de divergence.
+#### Contrat de données
+
+Cinq tables `derived` alimentent la réponse :
+
+| Table | Contenu | Grain |
+|---|---|---|
+| `derived.rpg_parcelles_aoi` | géométrie, `id_parcel`, `code_cultu` déclaré | parcelle |
+| `derived.parcelles_classification` (nb04, 4.4) | `classe_predite`, `classe_declaree`, `proba_max` (confiance du RF), `split`, `model_version` | parcelle |
+| `derived.divergence` (nb05, 5.4) | `classe_declaree`, `dist_classe`, `seuil_div`, `divergent` (bool), `dist_raccord`, `zone_raccord_orbital`, `version_pipeline` | parcelle |
+| `derived.phenologie` (nb05, 5.4) | `classe_declaree`, `sos_date`, `pos_date`, `eos_date`, `los_jours`, flags `sos_en_bord`/`pos_en_bord`/`eos_en_bord`, `fiable`, `lambda_whittaker`, `version_pipeline` | parcelle |
+| `derived.s2_parcelles_monthly` (nb03, 3.4) | `mois` (texte `'YYYY-MM'`), `variable`, `mean`, `std`, `p10`, `p90` | parcelle × mois × variable |
+
+> Tables confirmées : `derived.parcelles_classification` (nb04, 4.4),
+> `derived.divergence` et `derived.phenologie` (nb05, 5.4), clé primaire `id_parcel`,
+> upsert `ON CONFLICT DO UPDATE`. Les trois tables portent chacune leur propre colonne
+> `classe_declaree` (redondante mais issue de la même source RPG) — l'API peut s'appuyer
+> sur celle de `derived.parcelles_classification` comme référence, et vérifier la
+> cohérence entre tables comme garde-fou (cf. section 2 du notebook API).
+>
+> **Casse de `variable` (`derived.s2_parcelles_monthly`), vérifiée en base (nb API,
+> §6.4bis)** : valeurs stockées en **majuscules** — `NDVI`, `EVI`, `NDWI`, `NDRE` pour
+> les indices, `B02`/`B04`/`B05`/`B06`/`B07`/`B08`/`B11` pour les bandes. Point à ne
+> pas confondre avec les noms de champs `ParcelleProfil` (`ndvi`, `evi`, `ndwi`, `ndre`),
+> choisis en minuscules côté API sans lien avec la casse DB.
+>
+> **Mapping colonne DB → champ API** (noms API choisis plus explicites pour un
+> consommateur externe qui ne connaît pas le schéma interne) :
+>
+> | Colonne DB | Champ API |
+> |---|---|
+> | `proba_max` (classification) | `proba_classe` |
+> | `dist_classe` (divergence) | `score_divergence` |
+> | `divergent` (divergence) | `divergente` |
+> | `sos_date` / `pos_date` / `eos_date` / `los_jours` (phenologie) | `sos` / `pos` / `eos` / `los_jours` |
+> | `fiable` (phenologie) | `phenologie_fiable` |
+> | `variable = 'NDVI'/'EVI'/'NDWI'/'NDRE'`, `mean` (s2_parcelles_monthly) | `ndvi`/`evi`/`ndwi`/`ndre` (listes) |
+
+**Schémas Pydantic proposés** :
+
+```python
+class ParcelleDetail(BaseModel):
+    id_parcel: str
+    code_cultu_declare: str
+    classe_declaree: str
+    classe_predite: str
+    proba_classe: float
+    score_divergence: float
+    divergente: bool
+    zone_raccord_orbital: bool
+    sos: date | None
+    pos: date | None
+    eos: date | None
+    los_jours: int | None
+    phenologie_fiable: bool
+
+class ParcelleProfil(BaseModel):
+    id_parcel: str
+    dates: list[date]        # 16 pas mensuels, sept N → déc N+1
+    ndvi: list[float | None]
+    evi: list[float | None]
+    ndwi: list[float | None]
+    ndre: list[float | None]
+```
+
+**Mois manquants — absence de ligne, pas `NULL` (vérifié, nb API §6.4)** : pour un mois sous
+le seuil de complétude, `derived.s2_parcelles_monthly` ne contient **aucune ligne** pour
+la combinaison `id_parcel × mois × variable` — la valeur n'est pas stockée à `NULL`, elle
+est structurellement absente (test réel : 52 lignes sur 64 attendues pour une parcelle,
+13 mois distincts sur 16). L'API doit donc reconstruire le calendrier de référence des
+16 mois (`sept N` → `déc N+1`) côté requête (`generate_series` + `LEFT JOIN`) ou côté code
+Python, et combler les mois absents par `None` dans les listes `ParcelleProfil` — un simple
+`SELECT` sans ce calendrier de référence produirait des listes plus courtes que 16 éléments,
+désynchronisées avec `dates`.
+
+#### Endpoints envisagés
+
+| Endpoint | Rôle |
+|---|---|
+| `GET /parcelles/{id_parcel}` | fiche complète → `ParcelleDetail` |
+| `GET /parcelles/{id_parcel}/profil` | série temporelle → `ParcelleProfil`, pour le graphique au clic |
+| `GET /parcelles?bbox=xmin,ymin,xmax,ymax&limit=` | liste filtrée spatialement, propriétés allégées (`id_parcel`, `classe_predite`, `divergente`) pour colorer la carte — sans `offset` (cf. décision pagination) |
+| `GET /health` | vérification liveness (utile si déploiement conteneurisé en S6) |
+
+#### Choix techniques à trancher
+
+| Décision | Options | Recommandation |
+|---|---|---|
+| Driver PostGIS côté API | `psycopg2` (sync) vs `asyncpg` (async) | `asyncpg` + endpoints `async def` — cohérent avec FastAPI, évite de bloquer le event loop sur des requêtes spatiales ; contourne aussi l'incompatibilité déjà notée `psycopg2`/SQLAlchemy/`pd.read_sql` (non pertinente ici, l'API ne passe pas par pandas) |
+| Service géométries pour la carte | GeoJSON simplifié par bbox (`ST_Intersects` + `ST_SimplifyPreserveTopology`) vs tuiles vectorielles (`ST_AsMVT`) | GeoJSON simplifié en première itération, `tolerance = 5 m` (mesuré : médiane 18 → 7 sommets/parcelle, cf. diagnostic ci-dessous) ; `ST_AsMVT` en perspective si la carte devient publique à fort trafic — 80 700 parcelles en GeoJSON non simplifié serait trop lourd pour un rendu fluide |
+| CRS de sortie API | EPSG:2154 (natif PostGIS) vs EPSG:4326 (attendu par MapLibre/GeoJSON) | EPSG:4326 en sortie (`ST_Transform` + `ST_AsGeoJSON` côté SQL), cohérent avec la convention GeoJSON/RFC 7946 |
+| Carte web | Leaflet vs MapLibre GL JS | MapLibre — rendu vectoriel plus performant si migration ultérieure vers `ST_AsMVT`, pas de rupture d'outil entre première itération et perspective tuiles |
+| Pagination `/parcelles?bbox=` | offset/limit vs curseur vs `limit` seul | **`limit` seul, sans `offset`** (décidé après implémentation, §6.8) — l'usage identifié est une carte web interactive, où réduire le bbox (zoom/déplacement) est le geste naturel pour voir plus de parcelles, pas un défilement "page suivante" sur la même zone. `offset` reporté : à ajouter seulement si un usage d'export/script en masse apparaît (parcourir systématiquement un bbox large page par page), non identifié à ce jour |
+
+**Précision `ST_Intersects` / `ST_SimplifyPreserveTopology` (endpoint `GET /parcelles?bbox=`)** :
+
+- `ST_Intersects(geom_parcelle, bbox_geom)` — filtre entre la géométrie de chaque parcelle et le rectangle `bbox` reçu en paramètre, converti côté SQL en géométrie via `ST_MakeEnvelope(xmin, ymin, xmax, ymax, 4326)`. C'est l'étape de sélection spatiale, indépendante de la simplification.
+- `ST_SimplifyPreserveTopology(geom_parcelle, tolerance)` — s'applique ensuite à la géométrie de *chaque parcelle sélectionnée*, indépendamment des autres : réduit son nombre de sommets tout en garantissant l'absence d'auto-intersection introduite par la simplification (contrairement à `ST_Simplify` seul, qui peut créer des géométries invalides). Ce n'est **pas** intrinsèquement lié au zoom : la `tolerance` est un paramètre fixe qu'on choisit ; sans indication de zoom envoyée par le client, une tolérance unique doit être choisie a priori (compromis fidélité/poids). Une variante plus fine consisterait à faire varier `tolerance` selon la taille du `bbox` reçu (bbox large → zoom faible → tolérance plus grossière), mais cela reste une approximation du zoom réel côté carte, pas une correspondance garantie comme dans `ST_AsMVT` (où le zoom est un paramètre explicite de la requête de tuile).
+
+**Diagnostic mesuré sur `derived.rpg_parcelles_aoi`** (nombre de sommets par géométrie, `ST_NPoints`, médiane sur les 80 683 parcelles, EPSG:2154) :
+
+| Géométrie | Médiane de sommets |
+|---|---:|
+| Brute | 18 |
+| `ST_SimplifyPreserveTopology(geom, 5)` | 7 (−61 %) |
+| `ST_SimplifyPreserveTopology(geom, 10)` | 6 (−67 %) |
+
+**Décision** : `tolerance = 5` (mètres, EPSG:2154) — le gain marginal entre 5 m et 10 m est faible (1 sommet médian de moins), alors que doubler la tolérance de déformation risque de décoller visiblement les limites des petites parcelles. 5 m capte l'essentiel du gain de poids sans sacrifice de fidélité supplémentaire.
+
+#### Portage vers `src/api/` (endpoints `/parcelles/{id}` et `/parcelles/{id}/profil`)
+
+Code validé en notebook (`06_api.ipynb` §6.1-6.4) porté vers 4 modules, séparés par responsabilité :
+
+| Module | Rôle |
+|---|---|
+| `src/api/__init__.py` | fichier vide, marque `src/api` comme package Python |
+| `src/api/db.py` | pool de connexions `asyncpg`, chargement `.env`, détection `.projectroot` |
+| `src/api/schemas.py` | modèles Pydantic `ParcelleDetail`, `ParcelleProfil` |
+| `src/api/queries.py` | requêtes SQL + assemblage ligne DB → modèle Pydantic |
+| `src/api/main.py` | application FastAPI, routes, cycle de vie (`lifespan`) |
+
+Écarts assumés par rapport au notebook, documentés dans le code (docstrings/commentaires) plutôt que silencieux :
+
+- **Pool de connexions plutôt que connexion par requête** : le notebook ouvre/ferme une connexion `asyncpg` à chaque cellule (adapté à l'exploration) ; l'API crée un pool une fois au démarrage (`lifespan`), réutilisé par toutes les requêtes HTTP.
+- **`Path(__file__)` plutôt que `Path().resolve()`** pour `find_project_root` : un notebook a pour répertoire de travail celui d'où Jupyter est lancé (souvent déjà proche de la racine projet) ; un module importé par `uvicorn` n'a pas cette garantie — `__file__` est stable quel que soit le point de lancement.
+- **Requête fiche parcelle simplifiée** : ne récupère plus qu'une seule `classe_declaree` (celle de `parcelles_classification`, retenue comme référence), sans revérifier la cohérence entre les 3 tables à chaque appel — ce garde-fou a déjà tourné une fois sur les 77 932 parcelles (§6.2, 0 incohérence), le revérifier par requête HTTP ajouterait un coût sans bénéfice supplémentaire.
+
+**Endpoint `GET /parcelles?bbox=`** (le plus complexe du contrat) porté à son tour, après prototypage complet en notebook (§6.5-6.8) : `ST_Intersects` + `ST_SimplifyPreserveTopology(5)` + `ST_Transform` vers EPSG:4326, garde-fous `BBOX_MAX_AREA_KM2=50`/`limit≤2000` (§6.5, mesurés), détection de troncature sans `COUNT` systématique (`LIMIT limit+1`). Paramètre `bbox` reçu en chaîne `"xmin,ymin,xmax,ymax"` (convention REST courante, ex. `?bbox=0.72,49.39,0.79,49.42`), EPSG:4326, plutôt que 4 paramètres numériques séparés — plus proche de ce qu'une carte web (MapLibre `map.getBounds()`) transmet nativement.
+
+#### Risques spécifiques à ce sprint
+
+- **Volume** : `bbox` (le rectangle `xmin,ymin,xmax,ymax` demandé par le client, typiquement la fenêtre courante de la carte) sans limite pourrait renvoyer les 80 700 parcelles en un seul appel — les deux précautions sont cumulatives, pas alternatives :
+  - **Taille de bbox maximale : `BBOX_MAX_AREA_KM2 = 50`** — requête refusée en `HTTP 400` si la surface du rectangle dépasse ce seuil, avec un corps de réponse explicite : `{"detail": "bbox trop large (surface X km², maximum 50 km²) — réduisez l'emprise géographique demandée"}`. FastAPI permet ça nativement via une `HTTPException(status_code=400, detail=...)`, le message étant repris tel quel dans la réponse JSON exposée par Swagger/OpenAPI. **Valeur mesurée** (nb API §6.5) : densité moyenne de 24,1 parcelles/km² sur l'AOI (80 689 parcelles / 3 349 km²) — 50 km² correspond à une fenêtre de carte de type "village/petite commune" (~5-7 km de côté), au-delà de laquelle un rendu agrégé serait de toute façon plus pertinent qu'une liste de parcelles individuelles.
+  - **`limit` par défaut strict = 2000** : si le nombre de parcelles dans le bbox (valide) dépasse `limit`, la réponse reste `HTTP 200` mais signale explicitement la troncature plutôt que de la laisser silencieuse — champs additionnels dans la réponse : `"total_disponible": N, "retourne": limit, "tronque": true, "message": "Résultat tronqué à {limit} parcelles sur {N} — réduisez l'emprise géographique demandée."`. Le client (carte web) peut alors afficher un bandeau "zoomez pour voir toutes les parcelles" plutôt que de faire croire que la carte est complète. **Marge retenue** : à densité moyenne, 50 km² donne ~1 200 parcelles attendues ; `limit = 2000` absorbe une densité locale ~1,7× supérieure à la moyenne (zones de petites parcelles, maraîchage/lin) sans revenir à un "tout ou rien".
+- **PROJ** : si des opérations spatiales au-delà d'un simple `ST_AsGeoJSON` sont nécessaires côté API (reprojection à la volée, calculs de distance), reprendre la même précaution que dans le pipeline (WKT plutôt qu'EPSG codes) pour éviter le conflit PostgreSQL/pyproj déjà documenté.
+- **Cohérence des NULL** : les parcelles `autres`/`prairie` sans fenêtre phénologique calibrée (cf. limites S4) renverront `sos`/`pos`/`eos` à `null` — à documenter explicitement dans l'OpenAPI (`description` du champ), pas seulement dans `methode.md`, pour qu'un consommateur externe de l'API ne l'interprète pas comme une donnée manquante par erreur.
+
+#### Hors périmètre S5 *(reporté à S6 ou perspectives)*
+
+Déploiement (Docker, hébergement), authentification/rate-limiting, cache de requêtes, tuiles vectorielles `ST_AsMVT`.
 
 ---
 
@@ -282,7 +420,11 @@ Calculé avec les fenêtres avant le dernier ajustement de `jmin`/`jmax` sur `ce
 
 **Orchestration** : DAG Airflow (ou Prefect) reproduisant la chaîne complète depuis l'acquisition CDSE jusqu'au chargement PostGIS, avec gestion des dépendances inter-tâches et relance sur échec.
 
-**Tests** : tests unitaires pytest sur les fonctions de calcul (indices spectraux, stats zonales, métriques phénologiques), tests d'intégration sur un sous-ensemble de parcelles. CI GitHub Actions.
+**Migration notebooks → `src/`** : la logique de S1-S4, actuellement dans les notebooks (`01_ingestion_rpg.ipynb` à `05_divergence_pheno.ipynb`), est extraite vers les modules `src/acquisition/`, `src/processing/`, `src/db/`, `src/ml/`, `src/phenology/` (actuellement vides) pour devenir déclenchable par Airflow. Décision : **extraction complète, notebooks conservés en parallèle plutôt que supprimés** — même principe que `src/api/` (S5), déjà construit selon cette logique (chaque module documente sa provenance en commentaire, ex. `# Portage des requêtes validées dans 06_api.ipynb §6.2`).
+
+**Règle de non-réouverture** : un notebook de sprint mergé n'est plus modifié pour corriger sa logique — toute évolution se fait dans `src/`. Le notebook devient un instantané figé de la démarche au moment du sprint (valeur pédagogique/portfolio, traçabilité des décisions) ; `src/` devient l'unique source de vérité exécutable. Cette règle élimine le risque usuel de la duplication (deux copies d'une même logique qui divergent au fil des corrections) : les notebooks ne bougeant plus, il n'y a rien à resynchroniser.
+
+**Tests** : tests unitaires pytest sur les fonctions de calcul (indices spectraux, stats zonales, métriques phénologiques), tests d'intégration sur un sous-ensemble de parcelles. CI GitHub Actions. Bénéfice direct de la migration vers `src/` : du code en module est testable par pytest, contrairement à des cellules de notebook.
 
 **Documentation** : dictionnaire de données PostGIS, schéma de la base, README mis à jour jalon par jalon, note de méthode (ce document).
 
@@ -308,6 +450,7 @@ Calculé avec les fenêtres avant le dernier ajustement de `jmin`/`jmax` sur `ce
 | Table `s2_parcelles_completude` séparée de `s2_parcelles_monthly` | Colonne de complétude ajoutée à `s2_parcelles_monthly` | Le masque de validité est partagé par les 11 variables d'une même scène ; une colonne dénormalisée aurait dupliqué la même valeur 11 fois par parcelle × mois |
 | Idempotence par comparaison de dates de modification (raster de complétude vs sources) | Simple test d'existence du fichier de sortie | Un test d'existence seul aurait reproduit le piège déjà rencontré en 3.2 bis (fichier intermédiaire présent mais généré avant un correctif, silencieusement jamais régénéré) |
 | Fallback CRS par `ref_crs_wkt` (déjà résolu via `get_tile_crs`) | Fallback codé en dur sur une zone UTM fixe | Un EPSG fixe supposait à tort que toutes les tuiles étaient en zone 30N ; correct par coïncidence pour 30UYA/30UYV, faux pour 31UCQ/31UCR (décalage d'un fuseau, 100 % nodata sur 294 scènes) |
+| Migration S6 notebooks → `src/` : extraction complète, notebooks conservés en parallèle (pas supprimés), règle de non-réouverture des notebooks mergés | Notebooks seuls exécutés via `papermill` (sans extraction), ou suppression des notebooks après extraction | Papermill aurait préservé la démarche pédagogique mais mal adapté à Airflow/tests pytest, et rapproché moins de la pratique professionnelle visée ; supprimer les notebooks aurait perdu leur valeur de portfolio/traçabilité. La règle de non-réouverture élimine le risque usuel de duplication (deux copies divergentes) : les notebooks figés n'ont plus besoin d'être resynchronisés avec `src/` |
 ---
 
 ## Limites documentées

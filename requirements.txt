@@ -38,8 +38,9 @@ scikit-learn>=1.4             # Baseline Random Forest, métriques d'évaluation
 # s2cloudless>=1.7            # Non utilisé : le masquage repose exclusivement sur la bande SCL L2A
 
 # ── API (S5) ──────────────────────────────────────────────────────────────────
-# fastapi>=0.110              # Décommenter au sprint S5 (service)
-# uvicorn[standard]>=0.29     # Serveur ASGI pour FastAPI — décommenter au sprint S5
+fastapi>=0.110                # Service de restitution (S5)
+uvicorn[standard]>=0.29       # Serveur ASGI pour FastAPI
+asyncpg>=0.29                 # Driver PostGIS asynchrone, retenu pour l'API (cf. methode.md §S5)
 
 # ── Visualisation & export ────────────────────────────────────────────────────
 matplotlib>=3.8               # Graphes, profils temporels, matrices de confusion
@@ -47,6 +48,7 @@ folium>=0.16                  # Carte web légère (prototypage rapide)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 pytest>=8.0
+pytest-asyncio>=0.23           # Support des tests `async def` (src/api/queries.py)
 pytest-cov>=5.0               # Couverture de tests
 
 # ── Développement (hooks) — ne pas installer en production ───────────────────
