@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SeineCrops — Carte des parcelles</title>
+<link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    /* Palette liée aux cultures réelles, pas un choix arbitraire :
+       colza (jaune de floraison), lin (bleu de floraison), betterave
+       (feuillage bordeaux), etc. Cf. cadrage/methode.md §S5. */
+    --couleur-fond: #f6f5f1;
+    --couleur-encre: #232320;
+    --couleur-encre-douce: #5a5952;
+    --couleur-ligne: #d8d6cd;
+    --couleur-panneau: #ffffff;
+
+    --couleur-cereales-hiver: #d1b464;
+    --couleur-colza: #e8b923;
+    --couleur-mais: #c98a2b;
+    --couleur-betterave: #7b2d3e;
+    --couleur-lin: #7c95bf;
+    --couleur-prairie: #6b8f5a;
+    --couleur-legumes-fleurs: #b85c8a;
+    --couleur-autres: #a6a69e;
+    --couleur-alerte: #b23a2e;
+
+    --police-ui: "IBM Plex Sans", system-ui, sans-serif;
+    --police-data: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: var(--police-ui);
+    color: var(--couleur-encre);
+    background: var(--couleur-fond);
+  }
+
+  #carte {
+    position: absolute;
+    inset: 0;
+  }
+
+  header {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    background: var(--couleur-panneau);
+    border: 1px solid var(--couleur-ligne);
+    border-radius: 6px;
+    padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  header p {
+    margin: 2px 0 0;
+    font-family: var(--police-data);
+    font-size: 11px;
+    color: var(--couleur-encre-douce);
+  }
+
+  #legende {
+    position: absolute;
+    bottom: 24px;
+    left: 12px;
+    z-index: 10;
+    background: var(--couleur-panneau);
+    border: 1px solid var(--couleur-ligne);
+    border-radius: 6px;
+    padding: 10px 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    font-size: 12px;
+  }
+
+  #legende strong {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--couleur-encre-douce);
+  }
+
+  .legende-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.6;
+  }
+
+  .legende-separateur {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--couleur-ligne);
+  }
+
+  .pastille {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .pastille-contour {
+    background: transparent;
+    border: 2px solid var(--couleur-alerte);
+  }
+
+  .maplibregl-popup-content {
+    font-family: var(--police-ui);
+    font-size: 12px;
+    padding: 10px 12px;
+  }
+
+  .maplibregl-popup-content strong {
+    font-family: var(--police-data);
+  }
+
+  #panneau-detail {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: 320px;
+    background: var(--couleur-panneau);
+    border-left: 1px solid var(--couleur-ligne);
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+    padding: 18px 16px;
+    overflow-y: auto;
+    transition: transform 0.2s ease;
+  }
+
+  #panneau-detail.cache {
+    transform: translateX(100%);
+  }
+
+  #fermer-panneau {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    border: none;
+    background: none;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--couleur-encre-douce);
+    cursor: pointer;
+  }
+
+  #panneau-contenu h2 {
+    font-family: var(--police-data);
+    font-size: 16px;
+    margin: 0 20px 4px 0;
+  }
+
+  #panneau-contenu .sous-titre {
+    font-size: 12px;
+    color: var(--couleur-encre-douce);
+    margin-bottom: 14px;
+  }
+
+  #panneau-contenu dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    font-size: 12px;
+    margin: 0 0 16px;
+  }
+
+  #panneau-contenu dt {
+    color: var(--couleur-encre-douce);
+  }
+
+  #panneau-contenu dd {
+    margin: 0;
+    font-family: var(--police-data);
+    text-align: right;
+  }
+
+  .badge-divergente {
+    color: var(--couleur-alerte);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SeineCrops</h1>
+  <p id="statut">Chargement…</p>
+</header>
+
+<div id="legende">
+  <strong>Culture prédite</strong>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-cereales-hiver)"></span>Céréales d'hiver</div>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-colza)"></span>Colza</div>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-mais)"></span>Maïs</div>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-betterave)"></span>Betterave</div>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-lin)"></span>Lin</div>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-prairie)"></span>Prairie</div>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-legumes-fleurs)"></span>Légumes / fleurs</div>
+  <div class="legende-item"><span class="pastille" style="background:var(--couleur-autres)"></span>Autres</div>
+  <div class="legende-item legende-separateur"><span class="pastille pastille-contour"></span>Divergente</div>
+</div>
+
+<div id="carte"></div>
+
+<aside id="panneau-detail" class="cache">
+  <button id="fermer-panneau" aria-label="Fermer">×</button>
+  <div id="panneau-contenu">Sélectionnez une parcelle</div>
+</aside>
+
+<script>
+  // Emprise AOI mesurée (nb API §6.6), EPSG:4326
+  const AOI_BOUNDS = [
+    [0.05041953058845202, 48.94567022581],
+    [1.3990876398924237, 49.924824772591904],
+  ];
+
+  const map = new maplibregl.Map({
+    container: "carte",
+    style: {
+      version: 8,
+      sources: {
+        osm: {
+          type: "raster",
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          attribution: "© OpenStreetMap contributors",
+        },
+      },
+      layers: [
+        {
+          id: "osm",
+          type: "raster",
+          source: "osm",
+        },
+      ],
+    },
+    bounds: AOI_BOUNDS,
+    fitBoundsOptions: { padding: 20 },
+  });
+
+  map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+  // --- Couche des parcelles ------------------------------------------
+
+  const API_BASE = "http://localhost:8000";
+
+  const couleurClasse = {
+    cereales_hiver: "#d1b464",
+    colza: "#e8b923",
+    mais: "#c98a2b",
+    betterave: "#7b2d3e",
+    lin: "#7c95bf",
+    prairie: "#6b8f5a",
+    legumes_fleurs: "#b85c8a",
+    autres: "#a6a69e",
+  };
+
+  function bboxCourant() {
+    const b = map.getBounds();
+    return `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+  }
+
+  async function chargerParcelles() {
+    const statutEl = document.getElementById("statut");
+    statutEl.textContent = "Chargement…";
+
+    let reponse;
+    try {
+      reponse = await fetch(`${API_BASE}/parcelles?bbox=${bboxCourant()}`);
+    } catch (err) {
+      statutEl.textContent = "API injoignable (uvicorn lancé sur :8000 ?)";
+      return;
+    }
+
+    if (reponse.status === 400) {
+      statutEl.textContent = "Zone trop large — zoomez pour voir les parcelles";
+      if (map.getSource("parcelles")) {
+        map.getSource("parcelles").setData({ type: "FeatureCollection", features: [] });
+      }
+      return;
+    }
+
+    if (!reponse.ok) {
+      statutEl.textContent = `Erreur API (${reponse.status})`;
+      return;
+    }
+
+    const donnees = await reponse.json();
+
+    if (map.getSource("parcelles")) {
+      map.getSource("parcelles").setData(donnees);
+    } else {
+      map.addSource("parcelles", { type: "geojson", data: donnees });
+
+      map.addLayer({
+        id: "parcelles-fill",
+        type: "fill",
+        source: "parcelles",
+        paint: {
+          "fill-color": [
+            "match",
+            ["get", "classe_predite"],
+            "cereales_hiver", couleurClasse.cereales_hiver,
+            "colza", couleurClasse.colza,
+            "mais", couleurClasse.mais,
+            "betterave", couleurClasse.betterave,
+            "lin", couleurClasse.lin,
+            "prairie", couleurClasse.prairie,
+            "legumes_fleurs", couleurClasse.legumes_fleurs,
+            couleurClasse.autres,
+          ],
+          "fill-opacity": 0.55,
+        },
+      });
+
+      map.addLayer({
+        id: "parcelles-ligne",
+        type: "line",
+        source: "parcelles",
+        paint: {
+          "line-color": ["case", ["get", "divergente"], "#b23a2e", "#ffffff"],
+          "line-width": ["case", ["get", "divergente"], 2, 0.6],
+        },
+      });
+
+      map.on("click", "parcelles-fill", (e) => {
+        const idParcel = e.features[0].properties.id_parcel;
+        ouvrirPanneauDetail(idParcel);
+      });
+
+      map.on("mouseenter", "parcelles-fill", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "parcelles-fill", () => {
+        map.getCanvas().style.cursor = "";
+      });
+    }
+
+    const suffixe = donnees.tronque
+      ? ` sur ${donnees.total_disponible} (zoomez pour tout voir)`
+      : "";
+    statutEl.textContent = `${donnees.retourne} parcelle${donnees.retourne > 1 ? "s" : ""}${suffixe}`;
+  }
+
+  map.on("load", chargerParcelles);
+  map.on("moveend", chargerParcelles);
+
+  // --- Panneau de détail (fiche + profil temporel) --------------------
+
+  const panneau = document.getElementById("panneau-detail");
+  const panneauContenu = document.getElementById("panneau-contenu");
+  let graphiqueProfil = null;
+
+  document.getElementById("fermer-panneau").addEventListener("click", () => {
+    panneau.classList.add("cache");
+  });
+
+  const libelleClasse = {
+    cereales_hiver: "Céréales d'hiver",
+    colza: "Colza",
+    mais: "Maïs",
+    betterave: "Betterave",
+    lin: "Lin",
+    prairie: "Prairie",
+    legumes_fleurs: "Légumes / fleurs",
+    autres: "Autres",
+  };
+
+  async function ouvrirPanneauDetail(idParcel) {
+    panneau.classList.remove("cache");
+    panneauContenu.innerHTML = `<p>Chargement de la parcelle ${idParcel}…</p>`;
+
+    let fiche, profil;
+    try {
+      const [reponseFiche, reponseProfil] = await Promise.all([
+        fetch(`${API_BASE}/parcelles/${idParcel}`),
+        fetch(`${API_BASE}/parcelles/${idParcel}/profil`),
+      ]);
+      if (!reponseFiche.ok || !reponseProfil.ok) {
+        panneauContenu.innerHTML = `<p>Parcelle ${idParcel} introuvable.</p>`;
+        return;
+      }
+      fiche = await reponseFiche.json();
+      profil = await reponseProfil.json();
+    } catch (err) {
+      panneauContenu.innerHTML = "<p>API injoignable.</p>";
+      return;
+    }
+
+    const classeLabel = libelleClasse[fiche.classe_predite] || fiche.classe_predite;
+    const divergenteHtml = fiche.divergente
+      ? '<span class="badge-divergente">oui</span>'
+      : "non";
+
+    panneauContenu.innerHTML = `
+      <h2>${fiche.id_parcel}</h2>
+      <div class="sous-titre">code RPG déclaré : ${fiche.code_cultu_declare}</div>
+      <dl>
+        <dt>classe déclarée</dt><dd>${fiche.classe_declaree}</dd>
+        <dt>classe prédite</dt><dd>${classeLabel}</dd>
+        <dt>confiance modèle</dt><dd>${(fiche.proba_classe * 100).toFixed(0)}%</dd>
+        <dt>divergente</dt><dd>${divergenteHtml}</dd>
+        <dt>score divergence</dt><dd>${fiche.score_divergence.toFixed(2)}</dd>
+        <dt>SOS</dt><dd>${fiche.sos ?? "—"}</dd>
+        <dt>POS</dt><dd>${fiche.pos ?? "—"}</dd>
+        <dt>EOS</dt><dd>${fiche.eos ?? "—"}</dd>
+        <dt>durée saison</dt><dd>${fiche.los_jours ?? "—"} j</dd>
+        <dt>phénologie fiable</dt><dd>${fiche.phenologie_fiable ? "oui" : "non"}</dd>
+      </dl>
+      <canvas id="graphique-ndvi" height="140"></canvas>
+    `;
+
+    if (graphiqueProfil) {
+      graphiqueProfil.destroy();
+    }
+    const ctx = document.getElementById("graphique-ndvi");
+    graphiqueProfil = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: profil.dates,
+        datasets: [
+          {
+            label: "NDVI",
+            data: profil.ndvi,
+            borderColor: "#6b8f5a",
+            backgroundColor: "transparent",
+            spanGaps: false,
+            tension: 0.25,
+            pointRadius: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { min: 0, max: 1, ticks: { font: { size: 10 } } },
+          x: { ticks: { font: { size: 9 }, maxRotation: 60 } },
+        },
+      },
+    });
+  }
+</script>
+
+</body>
+</html>
