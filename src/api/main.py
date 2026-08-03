@@ -8,11 +8,17 @@ Documentation OpenAPI auto-générée : http://localhost:8000/docs
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from . import db
-from .queries import fetch_parcelle_detail, fetch_parcelle_profil
-from .schemas import ParcelleDetail, ParcelleProfil
+from .queries import (
+    BboxTropLargeError,
+    LIMIT_DEFAUT,
+    fetch_parcelle_detail,
+    fetch_parcelle_profil,
+    fetch_parcelles_bbox,
+)
+from .schemas import ParcelleDetail, ParcelleListResponse, ParcelleProfil
 
 
 @asynccontextmanager
@@ -54,3 +60,27 @@ async def get_parcelle_profil(id_parcel: str) -> ParcelleProfil:
     if profil is None:
         raise HTTPException(status_code=404, detail=f"Parcelle {id_parcel} introuvable")
     return profil
+
+
+@app.get("/parcelles", response_model=ParcelleListResponse)
+async def get_parcelles_bbox(
+    bbox: str = Query(
+        ...,
+        description="xmin,ymin,xmax,ymax en EPSG:4326 (ex. la fenêtre courante de la carte)",
+        examples=["0.72,49.39,0.79,49.42"],
+    ),
+    limit: int = Query(LIMIT_DEFAUT, gt=0, le=LIMIT_DEFAUT),
+) -> ParcelleListResponse:
+    try:
+        xmin, ymin, xmax, ymax = (float(v) for v in bbox.split(","))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="bbox invalide, format attendu : xmin,ymin,xmax,ymax",
+        ) from exc
+
+    try:
+        async with db.pool.acquire() as conn:
+            return await fetch_parcelles_bbox(conn, (xmin, ymin, xmax, ymax), limit)
+    except BboxTropLargeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

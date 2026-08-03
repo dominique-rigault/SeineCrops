@@ -33,3 +33,11 @@ class ParcelleProfil(BaseModel):
     evi: list[float | None]
     ndwi: list[float | None]
     ndre: list[float | None]
+
+
+class ParcelleListResponse(BaseModel):
+    type: str = "FeatureCollection"
+    features: list[dict]
+    retourne: int
+    total_disponible: int
+    tronque: bool

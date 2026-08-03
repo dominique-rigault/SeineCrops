@@ -7,6 +7,7 @@ le détail des tables sources et du mapping colonne DB → champ API.
 
 from collections import defaultdict
 from datetime import date
+import json
 
 import pandas as pd
 from asyncpg import Connection
@@ -105,3 +106,94 @@ async def fetch_parcelle_profil(
         ndwi=[valeurs["NDWI"].get(m) for m in MOIS_REFERENCE],
         ndre=[valeurs["NDRE"].get(m) for m in MOIS_REFERENCE],
     )
+
+
+# --- Liste bbox (§6.5-6.8) --------------------------------------------------
+
+# Mesuré en §6.5 : densité moyenne 24,1 parcelles/km² sur l'AOI
+# (80 689 parcelles / 3 349 km²). BBOX_MAX_AREA_KM2 = fenêtre de carte
+# "village/petite commune" ; LIMIT_DEFAUT = ~1,7x le compte moyen attendu
+# à cette surface, pour absorber une densité locale plus forte que la
+# moyenne (cf. methode.md §S5, Risques spécifiques).
+BBOX_MAX_AREA_KM2 = 50
+LIMIT_DEFAUT = 2000
+
+SQL_SURFACE_BBOX = """
+    SELECT ROUND(
+        (ST_Area(ST_Transform(ST_MakeEnvelope($1, $2, $3, $4, 4326), 2154)) / 1e6)::numeric,
+        1
+    ) AS surface_km2
+"""
+
+SQL_BBOX = """
+    SELECT
+        c.id_parcel,
+        c.classe_predite,
+        d.divergent,
+        ST_AsGeoJSON(
+            ST_Transform(ST_SimplifyPreserveTopology(r.geom, 5), 4326)
+        ) AS geometry_json
+    FROM derived.parcelles_classification c
+    JOIN derived.rpg_parcelles_aoi r USING (id_parcel)
+    LEFT JOIN derived.divergence d USING (id_parcel)
+    WHERE ST_Intersects(r.geom, ST_Transform(ST_MakeEnvelope($1, $2, $3, $4, 4326), 2154))
+    LIMIT $5
+"""
+
+SQL_COUNT_BBOX = """
+    SELECT COUNT(*)
+    FROM derived.parcelles_classification c
+    JOIN derived.rpg_parcelles_aoi r USING (id_parcel)
+    WHERE ST_Intersects(r.geom, ST_Transform(ST_MakeEnvelope($1, $2, $3, $4, 4326), 2154))
+"""
+
+
+class BboxTropLargeError(Exception):
+    """Bbox client dont la surface dépasse BBOX_MAX_AREA_KM2 (-> HTTP 400)."""
+
+    def __init__(self, surface_km2: float, max_km2: float):
+        self.surface_km2 = surface_km2
+        self.max_km2 = max_km2
+        super().__init__(
+            f"bbox trop large (surface {surface_km2} km², maximum {max_km2} km²) "
+            f"— réduisez l'emprise géographique demandée"
+        )
+
+
+async def fetch_parcelles_bbox(
+    conn: Connection,
+    bbox: tuple[float, float, float, float],
+    limit: int = LIMIT_DEFAUT,
+) -> dict:
+    surface = await conn.fetchval(SQL_SURFACE_BBOX, *bbox)
+    if surface > BBOX_MAX_AREA_KM2:
+        raise BboxTropLargeError(surface, BBOX_MAX_AREA_KM2)
+
+    rows = await conn.fetch(SQL_BBOX, *bbox, limit + 1)
+    tronque = len(rows) > limit
+    rows = rows[:limit]
+
+    total_disponible = len(rows)
+    if tronque:
+        total_disponible = await conn.fetchval(SQL_COUNT_BBOX, *bbox)
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": json.loads(r["geometry_json"]),
+            "properties": {
+                "id_parcel": r["id_parcel"],
+                "classe_predite": r["classe_predite"],
+                "divergente": r["divergent"],
+            },
+        }
+        for r in rows
+    ]
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "retourne": len(features),
+        "total_disponible": total_disponible,
+        "tronque": tronque,
+    }
