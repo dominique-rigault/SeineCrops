@@ -137,6 +137,7 @@ SQL_BBOX = """
     JOIN derived.rpg_parcelles_aoi r USING (id_parcel)
     LEFT JOIN derived.divergence d USING (id_parcel)
     WHERE ST_Intersects(r.geom, ST_Transform(ST_MakeEnvelope($1, $2, $3, $4, 4326), 2154))
+    ORDER BY c.id_parcel
     LIMIT $5
 """
 
