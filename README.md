@@ -20,19 +20,25 @@ Le projet reproduit à échelle réduite la logique du dispositif opérationnel
 
 ```
 Copernicus CDSE ──► [Acquisition · Rasterio]
-        │
-        ▼
-   RPG (IGN/WFS) ──► [Agrégation zonale] ──► PostGIS (parcelles + séries)
-                                                      │
-                          ┌───────────────────────────┼──────────────────┐
-                          ▼                           ▼                  ▼
-                  [ML : RF / DL]          [Phéno SOS/POS/EOS]      [FastAPI]
-                          │                           │                  │
-                          └───────────────────────────┴──────────────────┘
-                                                      │
-                                              Webmap (MapLibre)
-                                                      ▲
-                              Orchestration : Airflow · CI/CD : GitHub Actions
+                              │
+                              ▼
+   RPG (IGN/WFS) ──────► [Agrégation zonale] ───────────────┐
+                              │                             │
+              ┌───────────────┴───────────────┐             │
+              ▼                               ▼             │
+      [ML : RF / DL]                [Phéno SOS/POS/EOS]     │
+              │                               │             │
+              └───────────────┬───────────────┘             │
+                              ▼                             │
+                           PostGIS ◄────────────────────────┘
+                              │
+                              ▼
+                          [FastAPI]
+                              │
+                              ▼
+                       Webmap (MapLibre)
+
+Orchestration : Airflow · CI/CD : GitHub Actions
 ```
 
 ---
