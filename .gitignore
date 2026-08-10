@@ -29,6 +29,7 @@ sentinelhub_config.*
 
 # ── Documents de communicatrion ───────────────────────────────────────────────────
 docs/
+index-capture.html
 
 # ── Données brutes (volumineuses, non redistribuées) ─────────────────────────
 # Règle : exclure par type de fichier, PAS par dossier entier
@@ -115,3 +116,6 @@ Thumbs.db
 desktop.ini
 data/raw/s2/bands/
 data/raw/s2/indices/
+
+# ── Diagnostics (S6, artefacts reproductibles, non versionnés) ────────────────
+data/diagnostics/
