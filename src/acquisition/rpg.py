@@ -87,16 +87,23 @@ def detecter_archive(
 
 
 def decompresser_archive(
-    archive: Path, data_raw: Path, couche_cible: str = "RPG_Parcelles.gpkg"
+    archive: Path, data_raw: Path, nom_fichier_gpkg: str = "RPG_Parcelles.gpkg"
 ) -> Path:
-    """Décompresse une archive `.7z` dans `data_raw`, retourne le chemin du GeoPackage cible.
+    """Décompresse une archive `.7z` dans `data_raw`, retourne le chemin du GeoPackage.
 
-    Idempotent : si `couche_cible` est déjà présent, la décompression est
-    sautée plutôt que refaite.
+    `nom_fichier_gpkg` est le nom de FICHIER (avec extension) recherché sur
+    le disque — distinct du nom de COUCHE à l'intérieur du GeoPackage (cf.
+    `couche_cible` dans `reconnaitre_gpkg`/`charger_rpg_vers_raw`), qui n'a
+    pas d'extension. Les deux valent "RPG_Parcelles"(.gpkg) mais ne doivent
+    jamais être confondus dans les appels — bug corrigé après un premier
+    run qui cherchait le fichier sans son extension.
+
+    Idempotent : si `nom_fichier_gpkg` est déjà présent, la décompression
+    est sautée plutôt que refaite.
     """
-    existants = list(data_raw.rglob(couche_cible))
+    existants = list(data_raw.rglob(nom_fichier_gpkg))
     if existants:
-        logger.info("%s déjà présent, décompression ignorée.", couche_cible)
+        logger.info("%s déjà présent, décompression ignorée.", nom_fichier_gpkg)
         return existants[0]
 
     import py7zr
@@ -107,34 +114,36 @@ def decompresser_archive(
     with py7zr.SevenZipFile(archive, mode="r") as z:
         z.extractall(path=data_raw)
 
-    trouves = list(data_raw.rglob(couche_cible))
+    trouves = list(data_raw.rglob(nom_fichier_gpkg))
     if not trouves:
         raise FileNotFoundError(
-            f"{couche_cible} introuvable après décompression de {archive.name}"
+            f"{nom_fichier_gpkg} introuvable après décompression de {archive.name}"
         )
     return trouves[0]
 
 
 def localiser_gpkg(
     data_raw: Path,
-    couche_cible: str = "RPG_Parcelles.gpkg",
+    nom_fichier_gpkg: str = "RPG_Parcelles.gpkg",
     archive_patterns: tuple[str, ...] = ("*.7z",),
 ) -> Path:
-    """Localise le GeoPackage cible dans `data_raw`, décompresse si besoin.
+    """Localise le fichier GeoPackage dans `data_raw`, décompresse si besoin.
 
     Compose `detecter_archive` + `decompresser_archive` — reproduit la
     logique de §2.1 (recherche directe, sinon fallback archive).
+    `nom_fichier_gpkg` : nom de FICHIER (avec `.gpkg`) — ne pas y passer un
+    nom de couche (cf. note dans `decompresser_archive`).
     """
-    trouves = list(data_raw.rglob(couche_cible))
+    trouves = list(data_raw.rglob(nom_fichier_gpkg))
     if trouves:
         return trouves[0]
 
     archive = detecter_archive(data_raw, archive_patterns)
     if archive is None:
         raise FileNotFoundError(
-            f"Ni {couche_cible} ni archive trouvé(e) sous {data_raw}"
+            f"Ni {nom_fichier_gpkg} ni archive trouvé(e) sous {data_raw}"
         )
-    return decompresser_archive(archive, data_raw, couche_cible)
+    return decompresser_archive(archive, data_raw, nom_fichier_gpkg)
 
 
 # ── §2.2-2.6 — Reconnaissance ──────────────────────────────────────────────
