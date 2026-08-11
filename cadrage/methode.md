@@ -470,7 +470,13 @@ La logique de S1-S4, actuellement dans les notebooks (`01_ingestion_rpg.ipynb` �
 2. **`surface_totale_ha` confondait deux grandeurs** : le rapport de clôture recevait l'aire du polygone AOI lui-même (`charger_aoi_vers_raw`, ~5924.6 km²) au lieu de la somme de `surf_parc` sur les parcelles filtrées (~3349.4 km², la valeur de référence du projet) — deux grandeurs légitimement différentes (le polygone AOI inclut les terres non agricoles à l'intérieur du périmètre). Détecté par comparaison avec la valeur de référence connue du projet, pas par un test automatisé. Corrigé par l'ajout de `calculer_surface_totale_aoi()` (portage de §5 cellule 53, qui manquait à l'inventaire initial) ; les deux grandeurs sont maintenant distinctes dans `INGESTION_REPORT.json` (`surface_totale_ha` et `surface_aoi_polygone_km2`).
 
 **Leçon pour la section Tests** : les deux bugs partagent un point commun — aucun n'était détectable sans exécution réelle contre des données/identifiants réels, et le second n'a été repéré qu'en comparant à une valeur de référence connue par ailleurs (mémoire du projet), pas par une assertion automatisée. Argument concret en faveur des tests de non-régression avec valeurs de référence fixées en fixture (cf. §Tests), pas seulement des tests structurels (schéma, types).
-| `src/processing/` | à faire | `03_series_s2.ipynb` | téléchargement bandes, calcul indices (NDVI/EVI/NDWI/NDRE), composites mensuels médiane, stats zonales, fallback CRS (`ref_crs_wkt`) |
+| `src/processing/grid.py` | ✅ fait | `03_series_s2.ipynb` §3.2 ter | `calculer_grille_aoi` (dict explicite : width, height, transform, crs_wkt — pas de globales de module), `reproject_to_aoi` |
+| `src/processing/scl.py` | ✅ fait | §3.1 | `get_tile_crs`, `get_granule_id` (réutilisée par `bands.py`), `compute_f_valid_aoi`, `process_scene_scl`, `calculer_f_valid_aoi` (boucle, gère le rafraîchissement de token), `generer_diagnostics_f_valid_aoi`. `get_cdse_token`/`refresh_cdse_token` réutilisées depuis `src.acquisition.cdse`, pas redéfinies |
+| `src/processing/bands.py` | ✅ fait | §3.2 | ⚠️ `resample_to_20m` — 2 correctifs historiques critiques (voir note dédiée ci-dessous), à ne jamais modifier sans relire sa documentation. `download_band`, `compute_indices`, `save_geotiff`, `process_scene_bands` (fusion téléchargement+indices, cf. décision DAG), `traiter_bandes_indices` (boucle, gère le rafraîchissement de token) |
+| `src/processing/qc.py` | ✅ fait | §3.2 bis, §3.2 quater, §3.4 bis, §3.6 bis | `verifier_completude_fichiers` + diagnostics, `supprimer_jp2` (destructif, appelable uniquement par la future tâche `nettoyage_intermediaires`), `calculer_couverture_temporelle` + diagnostics (histogramme), `verifier_coherence_stats_mensuelles` + diagnostics, `verifier_coherence_ndvi_dates` (pas de diagnostics HTML — résultat déjà scalaire) |
+| `src/processing/composites.py` | ✅ fait | §3.3 | `compute_monthly_composite`, `construire_composites_mensuels` (boucle mois × variable) |
+| `src/processing/zonal.py` | ✅ fait | §3.4, §3.5, §3.6 | `creer_tables_zonales`, `charger_grille_labels` (retourne aussi `gdf_parcelles`, écart du portage strict — nécessaire à `diagnostiquer_parcelles_non_rasterisees`), `diagnostiquer_parcelles_non_rasterisees`, 3× (`zonal_*_from_labels` + `charger_*_vers_postgis`) pour `s2_parcelles_monthly`/`_completude`/`_ndvi_dates`. Connexion PostGIS passée en paramètre (pas `get_connection()` par appel), fermée explicitement (`conn.close()`, cf. note dédiée) |
+| `scripts/run_processing.py` | ✅ fait | nouveau en S6 (pas un portage) | Orchestration manuelle des 6 modules `src/processing/` dans l'ordre, flags `--skip-*` par phase — mêmes réserves que `run_ingestion.py` (pas de reprise fine sur échec). Docstring documente explicitement les contraintes durée/mémoire pour les futurs tests (cf. §Tests) |
 | `src/ml/` | à faire | `04_classification.ipynb` | entraînement `rf_base`, prédiction, persistance `derived.parcelles_classification` |
 | `src/phenology/` | à faire | `05_divergence_pheno.ipynb` | distance RMS standardisée, lissage Whittaker, marqueurs SOS/POS/EOS |
 
@@ -488,6 +494,62 @@ Deux niveaux, complémentaires et non redondants :
 - **`logging`** : traçabilité d'exécution, éphémère, consultable pendant/juste après un run (Airflow, ou console en exécution notebook/manuelle).
 - **Rapports JSON** (`SOURCE.json`, `RECON.json`, `INGESTION_REPORT.json`, `AVAILABILITY_REPORT.json`...) : documentent le résultat final, persistants, versionnés à côté des données — déjà en place depuis S1/S2, non remis en cause par l'ajout du logging.
 
+#### Détails critiques `src/processing/`
+
+**Fusion téléchargement + indices (§3.2)** : `process_scene_bands` fusionne
+en une seule fonction ce que le DAG indicatif initial (plus haut dans ce
+document) décrivait comme deux tâches séparées (`telechargement_bandes`,
+`calcul_indices`) — décision validée explicitement : la fusion évite une
+relecture disque des rasters déjà chargés en mémoire, sur plusieurs
+centaines de scènes. Le DAG indicatif doit être corrigé en conséquence
+quand il sera effectivement construit : une seule tâche
+`traitement_bandes_indices` à la place des deux.
+
+**Les deux correctifs historiques de `resample_to_20m`** sont préservés à
+l'identique lors du portage (`src_nodata=0` pour les pixels hors fauchée ;
+fallback CRS via `ref_crs_wkt` plutôt qu'un codage en dur `EPSG:32630`) —
+seuls les noms de paramètres et le passage de `print` à `logger` ont changé,
+jamais la logique de reprojection. Code à considérer comme critique pour
+tout le pipeline : deux bugs majeurs déjà diagnostiqués y vivaient (cf.
+tableau des décisions clés, entrées S2 historiques).
+
+**`SCL_INVALIDES` — documentation corrigée** : le notebook source ne
+documentait que 5 classes SCL exclues (3, 8, 9, 10, 11) dans son tableau
+markdown, alors que le code en excluait bien 7 (`{1, 3, 7, 8, 9, 10, 11}`).
+Confirmé : le jeu de classes du code fait autorité, c'est la documentation
+du notebook qui était incomplète — corrigée dans `src/processing/scl.py`.
+
+**Rafraîchissement de token CDSE — bug de propagation trouvé et corrigé**
+dans `scl.py` et `bands.py` : `refresh_cdse_token()` retourne un nouveau
+dict, il ne mute pas en place. Un rafraîchissement fait à l'intérieur de la
+fonction par-scène (`process_scene_scl`/`process_scene_bands`, comme dans
+le notebook — `get_cdse_token()` rappelé à chaque scène) ne se propage pas
+à l'itération suivante : chaque scène retombe sur une authentification
+complète après expiration du token initial, annulant le bénéfice du
+partage. Corrigé en déplaçant le rafraîchissement (et sa réassignation)
+dans la boucle appelante (`calculer_f_valid_aoi`, `traiter_bandes_indices`)
+plutôt que dans la fonction par-scène — gain attendu significatif sur la
+durée totale du run (une authentification complète en moins par scène,
+sur plusieurs centaines de scènes).
+
+**Suppression des `.jp2` (`qc.supprimer_jp2`)** : jamais appelée
+automatiquement par `run_processing.py` — utilisable uniquement depuis la
+future tâche Airflow dédiée `nettoyage_intermediaires`, après confirmation
+par `verifier_completude_fichiers`. Réplique la leçon S2 déjà actée
+(suppression prématurée avant QC → correction rétroactive impossible).
+
+**Gestion de connexion PostGIS dans `zonal.py`** : connexion ouverte et
+fermée explicitement (`conn = get_connection(); ... finally: conn.close()`)
+plutôt que `with get_connection() as conn:` utilisé ailleurs dans `src/`
+(`rpg.py`, `qa.py`) — chez `psycopg2`, le context manager d'une connexion
+ne gère que la transaction (commit/rollback), **pas la fermeture**. Sans
+conséquence pratique pour des appels courts (`rpg.py`/`qa.py`), mais rendu
+explicite ici car la connexion vit plusieurs heures à travers plusieurs
+opérations lourdes séquentielles. **Question ouverte, non tranchée** :
+faut-il harmoniser `rpg.py`/`qa.py` avec une fermeture explicite par
+cohérence, ou est-ce un non-enjeu pour des scripts courts qui se
+terminent de toute façon peu après ?
+
 #### Tests — deux échelles, à ne pas confondre
 
 **Tests automatisés (pytest, CI GitHub Actions)**, à deux échelles :
@@ -495,6 +557,19 @@ Deux niveaux, complémentaires et non redondants :
 - *intégration* : la chaîne réelle sur un sous-ensemble de parcelles (échantillon fixe couvrant les 8 classes, à définir), base PostGIS de test — vérifie l'articulation entre modules (sortie de `processing` lisible par `ml`, schéma de table conforme à ce qu'attend `queries.py`), pas seulement la justesse de chaque fonction isolée. Périmètre volontairement réduit par rapport à l'AOI complète pour un temps de CI raisonnable. Inclut un cas de **non-régression phénologique** : une fois les fenêtres calendaires par classe calibrées (cf. QC visuelle ci-dessous), vérifie que les SOS/POS/EOS recalculés sur ce même échantillon retombent dans les enveloppes D10-D90 déjà établies (stockées en fixture), avec alerte si dérive au-delà d'une tolérance à définir — détecte qu'un changement de code a silencieusement décalé la phénologie calculée, sans constituer une échelle de test distincte de l'intégration.
 
 **QC visuelle (notebooks, non automatisée, complémentaire)** : la génération de cartes/plots de l'AOI pour détection visuelle d'anomalie par l'utilisateur reste une pratique légitime et déjà utile (le bug fallback CRS en 31UCQ/31UCR aurait pu être repéré visuellement avant diagnostic technique) — mais ce n'est pas un test au sens CI, un pipeline automatisé ne "regarde" pas une image. De même, la confirmation des fenêtres phénologiques par classe sur présentation des enveloppes D10-D90 est un exercice de calibration visuelle déjà pratiqué en S4, à conserver comme étape exploratoire notebook — distincte du test de non-régression automatisé qui s'appuie sur cette calibration une fois figée. Pour capter formellement ce qu'un contrôle visuel détecterait, certaines observations sont converties en assertions automatisées (`ST_IsValid` par géométrie, bbox de l'AOI dans une plage attendue, nombre de parcelles cohérent avec le total connu), sans prétendre à une équivalence stricte avec l'œil humain, qui détecte de l'inattendu et pas seulement des règles prédéfinies.
+
+**Contrainte durée/mémoire pour les futurs tests de `src/processing/`** :
+`scripts/run_processing.py` télécharge potentiellement plusieurs centaines
+de scènes (plusieurs Go) et traite des rasters sur l'emprise complète de
+l'AOI — inadapté tel quel à une exécution en CI. Les futurs tests
+automatisés de cette chaîne devront s'appuyer sur des fixtures réduites,
+pas sur le script directement : une grille AOI miniature (quelques
+dizaines de pixels) pour `grid.py`/`composites.py`/`zonal.py` ; 1-2 scènes
+synthétiques (petits GeoTIFF fabriqués à la main, pas de téléchargement
+réel) pour `bands.py`/`scl.py` ; les appels réseau CDSE systématiquement
+mockés. Point soulevé explicitement pendant la migration, avant même
+l'écriture des tests eux-mêmes — à ne pas perdre de vue quand la section
+tests sera implémentée.
 
 #### Déploiement
 
@@ -533,6 +608,9 @@ Dictionnaire de données PostGIS (par table `raw.*`/`derived.*` : colonnes, type
 | Logging S6 : module `logging` standard, capturé par Airflow, pas d'infrastructure dédiée | Log structuré maison (JSON lines, fichier propre au pipeline) | Airflow capture déjà `logging`/stdout par tâche nativement (UI/CLI, horodaté) — une infra maison ferait doublon pour un projet portfolio solo. Les métriques destinées à être requêtables/agrégées à travers les runs restent dans les rapports JSON déjà en place (`INGESTION_REPORT.json` etc.), pas dans les logs |
 | `src/db/connection.py` : échec explicite si `.env` ou `PG_PASSWORD` absent, plutôt que des valeurs par défaut silencieuses | Défauts silencieux (`localhost`/`postgres`/`password=None`) laissant échouer la connexion plus tard | Un échec tardif côté psycopg2 (à la connexion) est moins explicite qu'un échec immédiat au chargement du module — même logique que la vérification `CDSE_USER`/`CDSE_PASSWORD` déjà pratiquée en S2. `PG_HOST`/`PG_USER`/`PG_DBNAME` gardent des défauts (localhost/postgres/seinecrops), jugés sans risque pour un usage local |
 | `src/acquisition/rpg.py` : `PSQL_BIN` configurable via `.env`, défaut `"psql"` (PATH) | Chemin Windows en dur (`C:\Program Files\PostgreSQL\18\bin\psql.exe`), comme dans le notebook | Portabilité — le notebook est intrinsèquement lié au poste de développement, un module `src/` destiné à tourner sous Airflow ne devrait pas l'être. `psql` n'étant pas sur le PATH du poste actuel, `PSQL_BIN` doit être renseigné explicitement dans `.env` en attendant |
+| Fusion `telechargement_bandes` + `calcul_indices` en une seule tâche DAG (`process_scene_bands`) | Deux tâches séparées, comme suggéré par le DAG indicatif initial | Évite une relecture disque des rasters déjà en mémoire, sur plusieurs centaines de scènes ; le DAG indicatif était une estimation avant d'avoir vu le code réel du notebook |
+| Rafraîchissement du token CDSE déplacé dans la boucle appelante (`calculer_f_valid_aoi`/`traiter_bandes_indices`), pas dans la fonction par-scène | Rappeler `get_cdse_token()` à chaque scène (comportement du notebook) | `refresh_cdse_token()` retourne un nouveau dict sans muter l'ancien — un rafraîchissement local à la fonction par-scène ne se propage pas à l'itération suivante, annulant le bénéfice du partage de token sur un run de plusieurs heures |
+| `zonal.py` : connexion PostGIS ouverte/fermée explicitement (`get_connection()` + `conn.close()` en `finally`) | `with get_connection() as conn:` comme le reste de `src/` | Chez `psycopg2`, le context manager d'une connexion ne gère que la transaction, pas la fermeture — sans conséquence pour des appels courts, mais rendu explicite ici car la connexion vit plusieurs heures à travers des opérations lourdes séquentielles. Question ouverte : harmoniser `rpg.py`/`qa.py` ou laisser tel quel ? |
 | `rpg.py`/`cdse.py` : paramètres de campagne (`millesime`, `region_code`, `date_start`/`date_end`) explicites en argument, centralisés dans `src/config.py` | Constantes globales de module (comme dans les notebooks) | Une valeur de campagne figée en dur dans `src/` serait un couplage caché entre le code et une exécution donnée ; `src/config.py` reste une source de vérité unique, migrable vers des Variables Airflow sans réécriture des fonctions |
 ---
 
