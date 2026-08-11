@@ -1,8 +1,6 @@
 {
   "gpkg": "RPG_Parcelles.gpkg",
-  "chemin_relatif": "RPG_3-0__GPKG_LAMB93_R28_2024-01-01\\RPG\\1_DONNEES_LIVRAISON_2024\\RPG_3-0__GPKG_LAMB93_R28_2024-01-01\\RPG_Parcelles.gpkg",
-  "taille_go": 0.359,
-  "date_reconnaissance": "2026-06-30",
+  "date_reconnaissance": "2026-08-11",
   "couches": [
     {
       "couche": "RPG_Parcelles",
@@ -33,16 +31,6 @@
       "culture_d2",
       "cat_cult_p"
     ],
-    "attributs_attendus_v3": [
-      "id_parcel",
-      "surf_parc",
-      "code_cultu",
-      "code_group",
-      "culture_d1",
-      "culture_d2",
-      "cat_cult_p"
-    ],
-    "note_cat_cult_p": "Nouveauté v3.0 — catégorie PAC (TA, CP, PP, SB)",
     "bbox_lamb93": {
       "xmin": 343139,
       "ymin": 6788983,
@@ -50,7 +38,7 @@
       "ymax": 6998373
     }
   },
-  "surf_parc_stats_completes": {
+  "surf_parc_stats": {
     "count": 528950.0,
     "mean": 3.62,
     "std": 4.885,
@@ -161,21 +149,5 @@
       "n_parcelles": 1493,
       "pct": 0.3
     }
-  ],
-  "codes_cultures": {
-    "source": "WFS Géoplateforme — RPG.2024:codes_cultures",
-    "url": "https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=RPG.2024:codes_cultures&OUTPUTFORMAT=application%2Fjson",
-    "n_codes": 147,
-    "note": "Absent de l'archive régionale v3.0 — récupéré via WFS.",
-    "export": "codes_cultures_2024.csv"
-  },
-  "autres_bases_livraison": [
-    "RPG_BIO.gpkg",
-    "RPG_IAE.gpkg",
-    "RPG_Ilots.gpkg",
-    "RPG_PAC.gpkg",
-    "RPG_PP.gpkg",
-    "RPG_SNA.gpkg",
-    "RPG_ZDH.gpkg"
   ]
 }
