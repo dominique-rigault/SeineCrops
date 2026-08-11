@@ -60,6 +60,7 @@ def run_rpg() -> None:
     rpg.indexer_rpg_aoi()
 
     resultats = rpg.valider_ingestion()
+    surf_totale_ha = rpg.calculer_surface_totale_aoi()
 
     rpg.ecrire_rapport_cloture(
         data_raw=config.DATA_RAW_RPG,
@@ -69,8 +70,9 @@ def run_rpg() -> None:
         aoi_geojson=config.AOI_GEOJSON,
         qa_raw=qa_raw,
         resultats_validation=resultats,
-        surf_totale_ha=surf_km2 * 100,  # 1 km² = 100 ha
+        surf_totale_ha=surf_totale_ha,
         n_codes=len(df_codes),
+        surf_aoi_polygone_km2=surf_km2,
     )
     logger.info("=== Ingestion RPG terminée ===")
 
