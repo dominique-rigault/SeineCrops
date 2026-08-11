@@ -1,5 +1,5 @@
 {
-  "date_cloture": "2026-06-30",
+  "date_cloture": "2026-08-11",
   "millesime": 2024,
   "region": "R28",
   "source": {
@@ -32,7 +32,8 @@
     "methode": "ST_Intersects (parcelles entières, pas de découpe à la frontière)",
     "n_parcelles_normandie": 528950,
     "n_parcelles_aoi": 80689,
-    "surface_totale_ha": 334942.9
+    "surface_totale_ha": 334942.9,
+    "surface_aoi_polygone_km2": 5924.6
   },
   "qa": {
     "geometries_invalides_raw_avant_filtre": 10,
