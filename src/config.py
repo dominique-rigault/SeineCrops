@@ -44,3 +44,10 @@ ARCHIVE_PATTERNS = ("*.7z", "*.zip")  # motif(s) de l'archive régionale RPG
 NOM_FICHIER_GPKG = "RPG_Parcelles.gpkg"  # nom de FICHIER sur le disque (avec extension)
 COUCHE_CIBLE_RPG = "RPG_Parcelles"  # nom de COUCHE dans le GeoPackage (sans extension) — ne pas confondre
 AOI_GEOJSON = DATA_DIR / "vector" / "aoi" / "aoi_seinecrops.geojson"
+
+# ── Sorties intermédiaires de src/processing/ (§3.1-3.6) ───────────────────
+DATA_RAW_S2_SCL = DATA_RAW_S2 / "scl"
+DATA_RAW_S2_BANDS = DATA_RAW_S2 / "bands"
+DATA_RAW_S2_INDICES = DATA_RAW_S2 / "indices"
+DATA_RAW_S2_COMPOSITES = DATA_RAW_S2 / "composites"
+DATA_COMPLETUDE_DIR = DATA_DIR / "completude"

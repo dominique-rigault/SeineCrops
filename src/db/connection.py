@@ -15,6 +15,7 @@ Portage de `01_ingestion_rpg.ipynb` §Imports et paramètres globaux et
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg2
@@ -76,8 +77,40 @@ PG_PARAMS = get_pg_params()
 def get_connection() -> psycopg2.extensions.connection:
     """Nouvelle connexion psycopg2, à utiliser en context manager :
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(...)
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(...)
+
+    ⚠️ Chez `psycopg2`, `with conn:` ne gère QUE la transaction
+    (commit/rollback) — la connexion elle-même n'est jamais fermée par ce
+    bloc. Pour un appel isolé et court, sans conséquence pratique (le
+    garbage collector CPython ferme la socket via `__del__`, quasi
+    immédiat par comptage de références). Préférer `connexion()`
+    ci-dessous pour une fermeture garantie, notamment dans des boucles
+    ou avant qu'un nombre indéterminé d'appels s'accumulent (ex. futurs
+    workers Airflow exécutant plusieurs tâches dans le même process).
     """
     return psycopg2.connect(**PG_PARAMS)
+
+
+@contextmanager
+def connexion():
+    """Connexion PostGIS avec fermeture garantie (transaction ET socket) :
+
+        with connexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute(...)
+
+    Contrairement à `with get_connection() as conn:`, ce context manager
+    ferme explicitement la connexion en sortie de bloc (`finally`), qu'il
+    y ait eu exception ou non — corrige une ambiguïté que `psycopg2` laisse
+    ouverte (cf. docstring de `get_connection`). Préféré pour tout nouveau
+    code ; `get_connection()` reste disponible pour un usage direct
+    (ex. connexion longue-vie explicitement fermée par l'appelant, comme
+    `scripts/run_processing.py::run_zonal`).
+    """
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()

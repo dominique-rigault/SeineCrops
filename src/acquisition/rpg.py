@@ -34,7 +34,7 @@ import geopandas as gpd
 import pandas as pd
 import pyogrio
 
-from src.db.connection import get_connection, get_pg_params
+from src.db.connection import connexion, get_pg_params
 from src.db.qa import qa_validite, reparer_si_necessaire
 from src.reporting.diagnostics import (
     ajouter_tableau,
@@ -347,7 +347,7 @@ def charger_rpg_vers_raw(gpkg: Path, couche_cible: str, data_raw: Path) -> int:
     _retirer_create_schema(dump_path)
     _executer_psql(dump_path)
 
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM raw.rpg_parcelles;")
             n_charge = cur.fetchone()[0]
@@ -398,7 +398,7 @@ def charger_aoi_vers_raw(aoi_geojson: Path, data_raw: Path) -> tuple[int, float]
     _retirer_create_schema(dump_path)
     _executer_psql(dump_path)
 
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -442,7 +442,7 @@ def filtrer_aoi() -> int:
         JOIN raw.aoi_seinecrops AS a
             ON ST_Intersects(p.wkb_geometry, a.wkb_geometry);
     """
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute(sql)
             conn.commit()
@@ -463,7 +463,7 @@ def indexer_rpg_aoi() -> None:
         CREATE INDEX IF NOT EXISTS idx_rpg_parcelles_aoi_code_cultu
             ON derived.rpg_parcelles_aoi (code_cultu);
     """
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute(sql)
             conn.commit()
@@ -485,7 +485,7 @@ def calculer_surface_totale_aoi() -> float:
     l'intérieur du périmètre — les deux grandeurs ne doivent pas être
     interverties dans le rapport de clôture.
     """
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT ROUND((SUM(surf_parc))::numeric, 1) FROM derived.rpg_parcelles_aoi;"
@@ -512,7 +512,7 @@ def valider_ingestion() -> dict:
     if n_reparees_derived:
         n_invalides_derived = qa_validite("derived.rpg_parcelles_aoi", "geom")
 
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT ST_SRID(wkb_geometry) FROM raw.rpg_parcelles LIMIT 1;")
             srid_raw = cur.fetchone()[0]

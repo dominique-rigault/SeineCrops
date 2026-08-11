@@ -19,14 +19,14 @@ from __future__ import annotations
 
 import logging
 
-from .connection import get_connection
+from .connection import connexion
 
 logger = logging.getLogger(__name__)
 
 
 def qa_validite(schema_table: str, col_geom: str) -> int:
     """Compte les géométries invalides dans une table. Retourne le nombre trouvé."""
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -56,7 +56,7 @@ def reparer_si_necessaire(schema_table: str, col_geom: str, n_invalides: int) ->
         logger.info("%s : aucune réparation nécessaire", schema_table)
         return 0
 
-    with get_connection() as conn:
+    with connexion() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
