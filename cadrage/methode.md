@@ -483,6 +483,12 @@ La logique de S1-S4, actuellement dans les notebooks (`01_ingestion_rpg.ipynb` �
 | `src/ml/train.py` | ✅ fait | §4.3 | `construire_matrices`, `entrainer_rf_baseline`, `evaluer_modele` (généralisée — fusionne les cellules 19/21 du notebook, dupliquées à l'identique pour baseline et modèle tuné), `rechercher_hyperparametres` (`RandomizedSearchCV`, `cv=3` — limitation déjà documentée plus bas dans ce document, non corrigée), `top_features_importance`, `generer_diagnostics_modele` (nouveau, voir note) |
 | `src/ml/predict.py` | ✅ fait | §4.4 | `creer_table_classification`, `predire_toutes_parcelles` (toutes les parcelles, train+test), `upsert_predictions` (`ON CONFLICT DO UPDATE`, cohérent avec la décision déjà actée), `verifier_predictions` |
 | `scripts/run_ml.py` | ✅ fait | nouveau en S6 (pas un portage) | Orchestration manuelle des 5 modules `src/ml/`, flag `--skip-search` (baseline seule, sans `RandomizedSearchCV`, pour un run rapide). Pas de téléchargement réseau contrairement à `run_processing.py` — plus rapide, mais toujours pas d'exécution CI directe (`RandomizedSearchCV` reste coûteux en CPU) |
+| `src/phenology/divergence.py` | ✅ fait | `05_divergence_pheno.ipynb` §5.2 | `standardiser_features`, `calculer_profils_medians`, `calculer_distance_rms`, `calculer_seuils_divergence` (`k` généralisé, défaut 2.0), `generer_diagnostics_divergence_distribution`, `generer_diagnostics_divergence_spatiale` (réutilise `src.ml.split.charger_centroides`), `calculer_flag_raccord_orbital` (obligatoire mais skippable, cf. note dédiée), `generer_diagnostics_synthese`. Constantes `SEUIL_RACCORD`/`ORBITES_RACCORD`/`TUILE_RACCORD` locales (caractéristiques géométriques empiriques de cette campagne) |
+| `src/phenology/whittaker.py` | ✅ fait | §5.3 (lissage) | `charger_ndvi_profils`, `construire_grille_et_binning`, `lisser_whittaker` (système bandé pentadiagonal). `LAMBDA_WHITTAKER`/`N_MIN_OBS` locaux |
+| `src/phenology/phenology.py` | ✅ fait | §5.3 (extraction) | `extraire_phenologie` (par parcelle), `extraire_phenologie_toutes_parcelles` (prend `id_parcels`/`classes` en tableaux explicites, pas un DataFrame — cf. note dédiée), `generer_diagnostics_phenologie`. `FENETRES_PHENOLOGIE` locale (calendrier Normandie approximatif, à affiner) |
+| `src/phenology/persist.py` | ✅ fait | §5.4 | `creer_tables_phenologie`, `to_native`, `upsert_divergence`, `upsert_phenologie` (`ON CONFLICT DO UPDATE`), `verifier_chargement` (`n_attendu` généralisé, comme `n_features_attendu` en `src/ml/`) |
+| `scripts/run_phenology.py` | ✅ fait | nouveau en S6 (pas un portage) | Orchestration §5.1 (réutilise `src.ml.features`, aucune logique propre) → §5.2 → §5.3 → §5.4. Implémente le pattern "obligatoire skippable" pour `calculer_flag_raccord_orbital` (`try/except`, avertissement explicite, continue sans le flag plutôt que d'échouer) |
+
 | `src/phenology/` | à faire | `05_divergence_pheno.ipynb` | distance RMS standardisée, lissage Whittaker, marqueurs SOS/POS/EOS |
 
 **Écart assumé notebook → module (`qa.py`)** : dans le notebook, `qa_validite`/`reparer_si_necessaire` imprimaient leur résultat directement ; en module, elles ne font qu'exécuter, logger (niveau `INFO`/`WARNING`) et retourner une valeur — l'affichage devient la responsabilité de l'appelant le cas échéant. Principe appliqué à toutes les fonctions portées : une fonction `src/` retourne des données structurées, elle n'impose pas de format d'affichage.
@@ -604,6 +610,48 @@ dans `features.py`, `BLOCK_SIZE`/`TEST_RATIO`/`SEED` dans `split.py`,
 ajoutées à `src/config.py`, qui reste réservé aux paramètres de campagne
 (millésime, fenêtre temporelle, chemins) — ce sont des décisions de
 modélisation, dont la place naturelle est avec le code qui les utilise.
+
+#### Détails critiques `src/phenology/`
+
+**§5.1 non porté en module propre** : le chargement/pivot du feature set
+était quasi identique à `src.ml.features` (même `GROUP_MAP`, même
+dédoublonnage RPG, même pivot long→wide) — réutilisé directement dans
+`scripts/run_phenology.py` plutôt que dupliqué. Aucun code écrit pour
+cette section dans `src/phenology/`.
+
+**`id_parcels`/`classes` en tableaux explicites** (`phenology.py`) plutôt
+qu'un DataFrame indexé : `X_smooth` (sortie de `whittaker.py`) n'a aucune
+notion de nom de colonne/index, seulement un ordre de lignes — imposer un
+DataFrame ambigu (`id_parcel` en index dans `src.ml.features`, en colonne
+dans le notebook d'origine) aurait été une source d'erreur silencieuse
+d'alignement entre les résultats et les parcelles.
+
+**`calculer_flag_raccord_orbital` — obligatoire mais skippable** : cette
+fonction fait 2 appels réseau à l'API CDSE (empreintes de scènes,
+endpoint public sans authentification) pour calculer `dist_raccord`/
+`zone_raccord_orbital`, qui distinguent le bruit d'échantillonnage
+géométrique documenté (raccord orbital 51/94 sur la tuile 30UYV, cf.
+Limites documentées) d'une vraie divergence agronomique. La fonction
+elle-même ne gère pas l'échec réseau ; c'est `scripts/run_phenology.py`
+qui l'entoure d'un `try/except` — en cas d'échec, le run continue avec
+`dist_raccord`/`zone_raccord_orbital` à `NaN`/`False` et un avertissement
+explicite, plutôt que de faire échouer tout le run pour un appel léger
+(2 scènes) mais non strictement bloquant. Conséquence documentée si ce
+repli est activé : risque de confondre ce bruit d'échantillonnage avec
+un signal agronomique réel pour les parcelles de cette bande, tant que
+le flag n'est pas recalculé.
+
+**Diagnostic de synthèse initialement oublié** : `generer_diagnostics_synthese`
+(portage de la dernière cellule du notebook, croisement divergence ×
+phénologie) manquait à l'inventaire initial des modules — repéré et
+ajouté à `divergence.py` avant de finaliser `scripts/run_phenology.py`,
+pas après coup.
+
+**Migration notebooks → `src/` complète** : les 5 notebooks (S1-S4) sont
+maintenant intégralement portés (`src/db/`, `src/reporting/`,
+`src/acquisition/`, `src/processing/`, `src/ml/`, `src/phenology/`).
+Restent : le DAG Airflow lui-même, et les tests automatisés (aucun test
+écrit à ce stade pour l'ensemble de `src/`).
 
 #### Tests — deux échelles, à ne pas confondre
 
