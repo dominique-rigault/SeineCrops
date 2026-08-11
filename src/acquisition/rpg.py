@@ -475,6 +475,25 @@ def indexer_rpg_aoi() -> None:
 # ── §5 — Validation et clôture ──────────────────────────────────────────────
 
 
+def calculer_surface_totale_aoi() -> float:
+    """Surface agricole totale (ha) des parcelles filtrées — somme de `surf_parc`
+    sur `derived.rpg_parcelles_aoi`. Portage de §5 (cellule 53).
+
+    Distincte de l'aire du polygone AOI lui-même (`raw.aoi_seinecrops`,
+    calculée dans `charger_aoi_vers_raw`) : celle-ci inclut aussi les terres
+    non agricoles (forêts, zones urbaines, réseau hydrographique) à
+    l'intérieur du périmètre — les deux grandeurs ne doivent pas être
+    interverties dans le rapport de clôture.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT ROUND((SUM(surf_parc))::numeric, 1) FROM derived.rpg_parcelles_aoi;"
+            )
+            surf_totale_ha = cur.fetchone()[0]
+    return float(surf_totale_ha)
+
+
 def valider_ingestion() -> dict:
     """Assertions formalisées sur l'ingestion (portage §5.1-5.2).
 
@@ -573,9 +592,16 @@ def ecrire_rapport_cloture(
     resultats_validation: dict,
     surf_totale_ha: float,
     n_codes: int | None = None,
+    surf_aoi_polygone_km2: float | None = None,
 ) -> Path:
     """Consolide `SOURCE.json`/`RECON.json`/`DB.json` (s'ils existent) et les
     résultats de `valider_ingestion` en `INGESTION_REPORT.json` (portage §5.3).
+
+    `surf_totale_ha` : surface agricole (somme de `surf_parc` sur les
+    parcelles filtrées, cf. `calculer_surface_totale_aoi`) — champ historique,
+    même sémantique que dans le notebook. `surf_aoi_polygone_km2` (optionnel) :
+    emprise du polygone AOI lui-même (`charger_aoi_vers_raw`), ajoutée à
+    titre informatif, à ne pas confondre avec `surf_totale_ha`.
     """
 
     def charger_si_existe(path: Path) -> dict | None:
@@ -621,6 +647,11 @@ def ecrire_rapport_cloture(
             "n_parcelles_normandie": resultats_validation["n_raw"],
             "n_parcelles_aoi": resultats_validation["n_derived"],
             "surface_totale_ha": float(surf_totale_ha),
+            "surface_aoi_polygone_km2": (
+                float(surf_aoi_polygone_km2)
+                if surf_aoi_polygone_km2 is not None
+                else None
+            ),
         },
         "qa": {
             "geometries_invalides_raw_avant_filtre": n_invalides_raw,
