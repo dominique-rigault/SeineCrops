@@ -477,7 +477,12 @@ La logique de S1-S4, actuellement dans les notebooks (`01_ingestion_rpg.ipynb` �
 | `src/processing/composites.py` | ✅ fait | §3.3 | `compute_monthly_composite`, `construire_composites_mensuels` (boucle mois × variable) |
 | `src/processing/zonal.py` | ✅ fait | §3.4, §3.5, §3.6 | `creer_tables_zonales`, `charger_grille_labels` (retourne aussi `gdf_parcelles`, écart du portage strict — nécessaire à `diagnostiquer_parcelles_non_rasterisees`), `diagnostiquer_parcelles_non_rasterisees`, 3× (`zonal_*_from_labels` + `charger_*_vers_postgis`) pour `s2_parcelles_monthly`/`_completude`/`_ndvi_dates`. Connexion PostGIS passée en paramètre (pas `get_connection()` par appel), fermée explicitement (`conn.close()`, cf. note dédiée) |
 | `scripts/run_processing.py` | ✅ fait | nouveau en S6 (pas un portage) | Orchestration manuelle des 6 modules `src/processing/` dans l'ordre, flags `--skip-*` par phase — mêmes réserves que `run_ingestion.py` (pas de reprise fine sur échec). Docstring documente explicitement les contraintes durée/mémoire pour les futurs tests (cf. §Tests) |
-| `src/ml/` | à faire | `04_classification.ipynb` | entraînement `rf_base`, prédiction, persistance `derived.parcelles_classification` |
+| `src/ml/features.py` | ✅ fait | `04_classification.ipynb` §4.1 | `charger_feature_set_long`, `pivoter_features` (704 features par défaut, plus figé en dur — vérification optionnelle via `n_features_attendu`), `charger_et_regrouper_classes` (`GROUP_MAP`, constante locale au module — décision de modélisation, pas un paramètre de campagne), `joindre_classes`, `diagnostiquer_nan` |
+| `src/ml/imputation.py` | ✅ fait | §4.1bis | ⚠️ ordonnancement des fonctions **corrigé** par rapport à l'ordre d'affichage des cellules du notebook (voir note dédiée ci-dessous). `charger_completude`, `calculer_qc_action`, `construire_tier_wide`, `diagnostiquer_distance_ancrage`, `corriger_tier_ancrage_eloigne` (étendue — voir note), `appliquer_interpolation` |
+| `src/ml/split.py` | ✅ fait | §4.2 | `charger_centroides`, `split_spatial_par_blocs`, `joindre_split`, `verifier_representation_classes`. `BLOCK_SIZE`/`TEST_RATIO`/`SEED` constantes locales (hyperparamètres de modélisation, pas de campagne) |
+| `src/ml/train.py` | ✅ fait | §4.3 | `construire_matrices`, `entrainer_rf_baseline`, `evaluer_modele` (généralisée — fusionne les cellules 19/21 du notebook, dupliquées à l'identique pour baseline et modèle tuné), `rechercher_hyperparametres` (`RandomizedSearchCV`, `cv=3` — limitation déjà documentée plus bas dans ce document, non corrigée), `top_features_importance`, `generer_diagnostics_modele` (nouveau, voir note) |
+| `src/ml/predict.py` | ✅ fait | §4.4 | `creer_table_classification`, `predire_toutes_parcelles` (toutes les parcelles, train+test), `upsert_predictions` (`ON CONFLICT DO UPDATE`, cohérent avec la décision déjà actée), `verifier_predictions` |
+| `scripts/run_ml.py` | ✅ fait | nouveau en S6 (pas un portage) | Orchestration manuelle des 5 modules `src/ml/`, flag `--skip-search` (baseline seule, sans `RandomizedSearchCV`, pour un run rapide). Pas de téléchargement réseau contrairement à `run_processing.py` — plus rapide, mais toujours pas d'exécution CI directe (`RandomizedSearchCV` reste coûteux en CPU) |
 | `src/phenology/` | à faire | `05_divergence_pheno.ipynb` | distance RMS standardisée, lissage Whittaker, marqueurs SOS/POS/EOS |
 
 **Écart assumé notebook → module (`qa.py`)** : dans le notebook, `qa_validite`/`reparer_si_necessaire` imprimaient leur résultat directement ; en module, elles ne font qu'exécuter, logger (niveau `INFO`/`WARNING`) et retourner une valeur — l'affichage devient la responsabilité de l'appelant le cas échéant. Principe appliqué à toutes les fonctions portées : une fonction `src/` retourne des données structurées, elle n'impose pas de format d'affichage.
@@ -550,6 +555,56 @@ faut-il harmoniser `rpg.py`/`qa.py` avec une fermeture explicite par
 cohérence, ou est-ce un non-enjeu pour des scripts courts qui se
 terminent de toute façon peu après ?
 
+#### Détails critiques `src/ml/`
+
+**Anomalie d'ordre d'exécution corrigée (§4.1bis)** : dans le notebook,
+les cellules 9 et 10 utilisent `tier_wide`/`MOIS_ORDER`, définis
+seulement en cellule 11 — artefact d'édition non linéaire en Jupyter
+(le notebook a nécessairement été exécuté dans un ordre différent de son
+ordre d'affichage pour produire les résultats montrés), confirmé avant
+migration, pas une erreur de logique métier. `src/ml/imputation.py`
+réordonne les fonctions selon l'ordre logique réel : `calculer_qc_action`
+→ `construire_tier_wide` → `diagnostiquer_distance_ancrage` →
+`corriger_tier_ancrage_eloigne` → `appliquer_interpolation`.
+
+**`corriger_tier_ancrage_eloigne` étendue** : la règle documentée plus bas
+dans ce document (tableau des décisions clés) précise un repli en
+`exclure` si l'ancrage d'interpolation est à plus d'un mois. Le notebook
+implémentait cette condition par `dist_min > 1`, qui ne capture pas le cas
+`dist_min` absent (`NaN > 1` vaut `False` en pandas) — des cellules sans
+aucun ancrage valide restaient donc en `imputer`, un cas pourtant plus
+défavorable que "ancré à plus d'un mois". Décision prise d'étendre la
+condition à `dist_min.isna() | (dist_min > 1)`, cohérent avec l'esprit de
+la règle documentée. Le log distingue les deux sous-comptes
+(`n_sans_ancrage`, `n_eloigne`) pour vérifier que le volume concerné reste
+marginal — à contrôler au premier run réel via `scripts/run_ml.py`.
+
+**§4.3bis non porté** : section testant l'ajout de 3 features temporelles
+(amplitude NDVI, date du maximum, pente mai→août) pour réduire la
+confusion `autres`/`prairie`. Conclusion déjà documentée dans ce document
+(tableau des décisions clés, apprentissage sur les features temporelles
+dérivées) : ces features n'apportent pas de signal nouveau, seulement une
+combinaison linéaire de colonnes déjà présentes. Expérience ponctuelle
+déjà conclue négativement, pas une étape du pipeline opérationnel — le
+modèle retenu reste celui de §4.3 (`rf_base`/`rf` tuné), pas `rf_aug`.
+Laissée notebook-only, même logique que les autres diagnostics
+exploratoires déjà exclus (`SOURCE.json`, vérification WFS du millésime).
+
+**`generer_diagnostics_modele` (nouveau, `train.py`)** : rapport de
+diagnostics HTML pour un modèle évalué (heatmap de la matrice de
+confusion, tableau détaillé, rapport de classification, top features) —
+pas un portage direct, ajouté pour permettre de consulter les performances
+au fil des runs (comparaison baseline/tuné, suivi dans le temps), sur le
+même principe que les diagnostics déjà en place pour l'acquisition et le
+traitement.
+
+**Constantes de modélisation restées locales aux modules** (`GROUP_MAP`
+dans `features.py`, `BLOCK_SIZE`/`TEST_RATIO`/`SEED` dans `split.py`,
+`RF_PARAMS_BASELINE`/`PARAM_DIST_SEARCH`/`SEED` dans `train.py`) : pas
+ajoutées à `src/config.py`, qui reste réservé aux paramètres de campagne
+(millésime, fenêtre temporelle, chemins) — ce sont des décisions de
+modélisation, dont la place naturelle est avec le code qui les utilise.
+
 #### Tests — deux échelles, à ne pas confondre
 
 **Tests automatisés (pytest, CI GitHub Actions)**, à deux échelles :
@@ -597,6 +652,7 @@ Dictionnaire de données PostGIS (par table `raw.*`/`derived.*` : colonnes, type
 | Split spatial par blocs (classification) | Split aléatoire | Le split aléatoire crée une fuite spatiale : des parcelles voisines se retrouvent en train et en test |
 | Modèle final = baseline `rf_base` (défaut, sans tuning ni features temporelles) | Modèle tuné (`RandomizedSearchCV`), ou feature set augmenté (amplitude/date max NDVI, pente saisonnière) | Tuning : gain F1 macro nul (+0,001) au prix d'un surapprentissage doublé (écart train/test 0,060 → 0,107), causé par une CV interne (`cv=3`) aveugle au split spatial par blocs. Features temporelles : gain F1 macro nul (0,893 → 0,893), la confusion `autres`/`prairie` se redistribue sans se réduire — indice d'un problème de label RPG plutôt que de feature manquante. Simplicité et robustesse privilégiées sur un gain marginal à nul |
 | Règle exclure/imputer/conserver sur `pct_pixels_couverts` (seuil 50 %), avec repli en "exclure" si ancrage d'interpolation > 1 mois | Imputation systématique par interpolation, ou laisser Random Forest gérer les NaN nativement | La complétude spatiale (50 % de la parcelle) inspire davantage confiance que l'interpolation temporelle inter-mensuelle, la dynamique végétative n'étant pas linéaire sur plusieurs mois ; impact final négligeable (0,037 % des valeurs) |
+| Extension de la règle d'ancrage : repli en "exclure" aussi si aucun ancrage valide des deux côtés (`dist_min` absent), pas seulement si ancrage > 1 mois | Garder `dist_min > 1` seul, comme dans le notebook | `NaN > 1` vaut `False` en pandas — le filtre d'origine ne capturait pas le cas "aucun ancrage", pourtant plus défavorable que "ancré à plus d'un mois". Cohérent avec l'esprit de la règle ci-dessus. Volume à vérifier au premier run réel (`n_sans_ancrage` loggé séparément) |
 | Format par nature de donnée (parquet métadonnées / GeoTIFF composites / PostGIS parcelles-séries) | Format unique (tout PostGIS ou tout fichiers plats) | Parquet pour le catalogue de scènes (lecture séquentielle, pas de requête spatiale) ; GeoTIFF pour les composites raster (accès fenêtré rasterio, interopérabilité QGIS) ; PostGIS pour les données vecteur/relationnelles nécessitant jointures, requêtes spatiales et relances partielles par clé composite |
 | Table `s2_parcelles_completude` séparée de `s2_parcelles_monthly` | Colonne de complétude ajoutée à `s2_parcelles_monthly` | Le masque de validité est partagé par les 11 variables d'une même scène ; une colonne dénormalisée aurait dupliqué la même valeur 11 fois par parcelle × mois |
 | Idempotence par comparaison de dates de modification (raster de complétude vs sources) | Simple test d'existence du fichier de sortie | Un test d'existence seul aurait reproduit le piège déjà rencontré en 3.2 bis (fichier intermédiaire présent mais généré avant un correctif, silencieusement jamais régénéré) |
