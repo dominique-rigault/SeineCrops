@@ -108,11 +108,13 @@ def entrainer_et_evaluer(df_wide, skip_search: bool) -> dict:
     }
 
 
-def sauvegarder_predictions(df_wide, modele, feature_cols) -> None:
+def sauvegarder_predictions(df_wide, modele, feature_cols, version_prefix: str) -> None:
     """§4.4 — persistance des prédictions PostGIS."""
     logger.info("=== §4.4 — Sauvegarde des prédictions ===")
     predict.creer_table_classification()
-    df_predictions = predict.predire_toutes_parcelles(modele, df_wide, feature_cols)
+    df_predictions = predict.predire_toutes_parcelles(
+        modele, df_wide, feature_cols, version_prefix=version_prefix
+    )
     predict.upsert_predictions(df_predictions)
     predict.verifier_predictions()
 
@@ -130,10 +132,12 @@ def main() -> None:
     df_wide = appliquer_split_spatial(df_wide)
     resultat_entrainement = entrainer_et_evaluer(df_wide, args.skip_search)
 
+    version_prefix = "rf_base" if args.skip_search else "rf_tuned"
     sauvegarder_predictions(
         df_wide,
         resultat_entrainement["modele_final"],
         resultat_entrainement["matrices"]["feature_cols"],
+        version_prefix,
     )
 
     logger.info("=== Classification terminée ===")

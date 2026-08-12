@@ -33,11 +33,19 @@ SEED = 42
 def charger_centroides(index_reference: pd.Index) -> pd.DataFrame:
     """Charge les centroïdes des parcelles depuis `derived.rpg_parcelles_aoi`,
     restreints aux parcelles présentes dans le feature set (portage cellule 13).
+
+    `ORDER BY id_parcel` explicite : PostgreSQL ne garantit l'ordre des
+    lignes que s'il est demandé — sans lui, l'ordre peut varier d'une
+    exécution à l'autre (observé concrètement entre deux runs concurrents),
+    ce qui casse la reproductibilité de `split_spatial_par_blocs` malgré
+    `SEED` fixée : `rng.choice` pioche des *positions* dans
+    `df_centr["block_id"].unique()`, dont l'ordre dépend de celui des
+    lignes source.
     """
     with connexion() as conn:
         df_centr = pd.read_sql(
             "SELECT id_parcel, ST_X(ST_Centroid(geom)) AS cx, ST_Y(ST_Centroid(geom)) AS cy "
-            "FROM derived.rpg_parcelles_aoi",
+            "FROM derived.rpg_parcelles_aoi ORDER BY id_parcel",
             conn,
         )
     df_centr = df_centr.drop_duplicates(subset="id_parcel", keep="first")
