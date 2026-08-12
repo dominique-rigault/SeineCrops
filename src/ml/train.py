@@ -41,6 +41,10 @@ RF_PARAMS_BASELINE = dict(
     class_weight="balanced",
     random_state=SEED,
     n_jobs=-1,
+    oob_score=True,  # estimateur de généralisation quasi gratuit (chaque arbre évalué
+    # sur les échantillons qu'il n'a pas vus) — comparer à l'accuracy
+    # test donne un signal plus direct que le seul écart train/test
+    # pour juger d'un éventuel surapprentissage.
 )
 
 PARAM_DIST_SEARCH = {
@@ -91,7 +95,16 @@ def entrainer_rf_baseline(
 
     score_train = rf.score(matrices["X_train"], matrices["y_train"])
     score_test = rf.score(matrices["X_test"], matrices["y_test"])
-    logger.info("Accuracy train : %.4f, test : %.4f", score_train, score_test)
+    if params.get("oob_score"):
+        logger.info(
+            "Accuracy train : %.4f, OOB : %.4f, test : %.4f — écart OOB→test signale la "
+            "généralisation géographique (blocs disjoints), écart train→OOB un éventuel surapprentissage",
+            score_train,
+            rf.oob_score_,
+            score_test,
+        )
+    else:
+        logger.info("Accuracy train : %.4f, test : %.4f", score_train, score_test)
     return rf
 
 

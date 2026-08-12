@@ -207,11 +207,18 @@ def generer_diagnostics_phenologie(
     jours_grille: np.ndarray,
     df_pheno: pd.DataFrame,
     df_ndvi_long: pd.DataFrame,
+    date_min: pd.Timestamp,
     seed: int = 42,
     nom_module: str = "phenology_extraction",
 ) -> Path:
     """Validation visuelle : profil NDVI brut, lissé, repères phénologiques,
     un exemple par classe (portage cellule 16).
+
+    `date_min` : nécessaire pour convertir `df_ndvi_long["date"]` en jours
+    depuis l'origine de la grille (même échelle que `jours_grille`) — cette
+    conversion se fait ici, sur une copie, plutôt que de dépendre d'une
+    colonne `jour` calculée ailleurs (`whittaker.construire_grille_et_binning`
+    la calcule sur sa propre copie interne, jamais propagée à l'appelant).
     """
     import matplotlib.pyplot as plt
 
@@ -219,6 +226,9 @@ def generer_diagnostics_phenologie(
     rng = np.random.default_rng(seed)
     index_parcels = pd.Index(id_parcels)
     classes_triees = sorted(pd.unique(classes))
+
+    df_ndvi_long = df_ndvi_long.copy()
+    df_ndvi_long["jour"] = (df_ndvi_long["date"] - date_min).dt.days
 
     fig, axes = plt.subplots(2, 4, figsize=(18, 8), sharex=True)
     axes = axes.ravel()
