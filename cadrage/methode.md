@@ -653,6 +653,87 @@ maintenant intégralement portés (`src/db/`, `src/reporting/`,
 Restent : le DAG Airflow lui-même, et les tests automatisés (aucun test
 écrit à ce stade pour l'ensemble de `src/`).
 
+#### Bugs trouvés lors des tests manuels (`run_ml.py`, `run_phenology.py`)
+
+Suite de la stratégie déjà appliquée à `run_ingestion.py` : tester chaque
+script manuellement avant de construire le DAG, plutôt que de découvrir
+ces bugs une fois encapsulés dans des tâches Airflow. Statut des 5
+scripts à date : `run_ingestion.py` ✅, `run_ml.py` (baseline seule,
+`--skip-search`) ✅, `run_ml.py` (avec `RandomizedSearchCV`) ⏳ crash à
+revalider après correctif, `run_phenology.py` ✅, `run_processing.py` ⏳
+pas encore testé.
+
+**Backend matplotlib forcé en `Agg`** (`src/reporting/diagnostics.py`,
+transverse) : le backend interactif par défaut (`TkAgg` sur Windows)
+provoque des `RuntimeError: main thread is not in main loop` /
+`Tcl_AsyncDelete` dès qu'un autre thread tourne en parallèle
+(`RandomForestClassifier(n_jobs=-1)` notamment) — Tkinter n'est pas
+thread-safe. Détecté après un crash en toute fin d'un run
+`RandomizedSearchCV` de ~5h (60 fits, certaines combinaisons
+`max_features=0.2` avec beaucoup d'arbres coûtant jusqu'à 16 min chacune —
+durée largement sous-estimée au départ), juste avant l'écriture des
+diagnostics finaux : calcul perdu, rien n'étant persisté avant cette
+étape. Le pipeline ne fait jamais d'affichage interactif (uniquement
+`savefig()`+`close()`), le backend `Agg` est donc strictement suffisant.
+
+**Split spatial non reproductible malgré `SEED` fixée** (`src/ml/split.py`) :
+`charger_centroides` chargeait les centroïdes sans `ORDER BY` — PostgreSQL
+ne garantit l'ordre des lignes que s'il est demandé explicitement. Sans
+lui, l'ordre peut varier d'une exécution à l'autre (observé concrètement
+entre deux runs `run_ml.py` lancés en parallèle), ce qui casse la
+reproductibilité de `split_spatial_par_blocs` : `rng.choice` pioche des
+*positions* dans `df_centr["block_id"].unique()`, dont l'ordre dépend de
+celui des lignes source. Corrigé par `ORDER BY id_parcel` explicite.
+
+**Diagnostic OOB ajouté au baseline** (`src/ml/train.py`) :
+`oob_score=True` sur `RF_PARAMS_BASELINE` — estimateur de généralisation
+quasi gratuit (chaque arbre évalué sur les échantillons qu'il n'a pas vus
+dans son tirage bootstrap), plus direct que le seul écart train/test pour
+juger d'un éventuel surapprentissage. Résultat du premier run avec split
+reproductible : train `0.9411`, OOB `0.8722`, test `0.8800`. L'écart
+train→OOB (~7 points) signale un surapprentissage réel (mémorisation
+d'exemples par les arbres profonds) ; l'écart OOB→test quasi nul (le test
+fait même très légèrement mieux) suggère que la généralisation
+géographique (split par blocs, zones jamais vues) n'ajoute pas de
+pénalité mesurable au-delà d'un holdout non-spatial classique — plutôt
+rassurant sur la robustesse géographique du modèle, l'essentiel de l'écart
+train/test observé n'étant pas dû à la fuite spatiale mais à de la
+capacité RF ordinaire.
+
+**Étiquetage baseline/tuné corrigé** (`scripts/run_ml.py`) : le modèle
+baseline était upserté dans `derived.parcelles_classification` sous
+l'étiquette `rf_tuned` par erreur (préfixe non paramétré selon
+`--skip-search`) — corrigé (`rf_base_*` vs `rf_tuned_*` selon le cas),
+sans quoi une comparaison de versions dans la table serait trompeuse.
+
+**Normalisation `id_parcel` (`src/phenology/`)** : `src.ml.features` garde
+`id_parcel` en index de DataFrame, mais `divergence.py`/`phenology.py`
+supposaient une colonne partout (comme le notebook d'origine). Une
+première gestion défensive (`df["id_parcel"] if "id_parcel" in df.columns
+else df.index`) avait été appliquée de façon incomplète — un seul appel
+sur deux dans `generer_diagnostics_divergence_spatiale` — provoquant un
+premier `KeyError`. Corrigé à la source plutôt que rustiné localement :
+`scripts/run_phenology.py::preparer_feature_set` fait un `reset_index()`
+unique juste après `joindre_classes`, garantissant `id_parcel` en colonne
+pour tout le reste du pipeline ; les conditions défensives devenues
+inutiles ont été retirées de `divergence.py`, remplacées par une
+précondition documentée dans chaque docstring concernée.
+
+**Colonne `jour` non propagée** (`src/phenology/whittaker.py` /
+`phenology.py`) : `construire_grille_et_binning` calculait `jour` sur une
+copie locale de `df_ndvi_long`, jamais répercutée sur la variable de
+l'appelant — `generer_diagnostics_phenologie` recevait donc un
+`df_ndvi_long` sans cette colonne, `KeyError: 'jour'`. Corrigé en
+recalculant `jour` directement dans `generer_diagnostics_phenologie` à
+partir de `date_min` (déjà disponible), plutôt que de dépendre d'un état
+calculé ailleurs et non propagé.
+
+**Carte de répartition spatiale des divergences — observation notée, pas
+un bug** : deux lignes visibles au tracé similaire aux chevauchements de
+fauchées satellites (cohérent avec le flag raccord orbital déjà en place —
+13,6 % des parcelles concernées), un effet de littoral plausible, et 3
+amas moins attendus, non expliqués — investigation reportée à plus tard.
+
 #### Tests — deux échelles, à ne pas confondre
 
 **Tests automatisés (pytest, CI GitHub Actions)**, à deux échelles :
@@ -715,6 +796,8 @@ Dictionnaire de données PostGIS (par table `raw.*`/`derived.*` : colonnes, type
 | Fusion `telechargement_bandes` + `calcul_indices` en une seule tâche DAG (`process_scene_bands`) | Deux tâches séparées, comme suggéré par le DAG indicatif initial | Évite une relecture disque des rasters déjà en mémoire, sur plusieurs centaines de scènes ; le DAG indicatif était une estimation avant d'avoir vu le code réel du notebook |
 | Rafraîchissement du token CDSE déplacé dans la boucle appelante (`calculer_f_valid_aoi`/`traiter_bandes_indices`), pas dans la fonction par-scène | Rappeler `get_cdse_token()` à chaque scène (comportement du notebook) | `refresh_cdse_token()` retourne un nouveau dict sans muter l'ancien — un rafraîchissement local à la fonction par-scène ne se propage pas à l'itération suivante, annulant le bénéfice du partage de token sur un run de plusieurs heures |
 | `zonal.py` : connexion PostGIS ouverte/fermée explicitement (`get_connection()` + `conn.close()` en `finally`) | `with get_connection() as conn:` comme le reste de `src/` | Chez `psycopg2`, le context manager d'une connexion ne gère que la transaction, pas la fermeture — sans conséquence pour des appels courts, mais rendu explicite ici car la connexion vit plusieurs heures à travers des opérations lourdes séquentielles. Question ouverte : harmoniser `rpg.py`/`qa.py` ou laisser tel quel ? |
+| Backend matplotlib forcé en `Agg` dans `src/reporting/diagnostics.py` | Laisser le backend par défaut (`TkAgg`) | Tkinter n'est pas thread-safe — provoque des crashs dès qu'un autre thread tourne en parallèle (`RandomForestClassifier n_jobs=-1`). Le pipeline ne fait jamais d'affichage interactif, `Agg` est strictement suffisant |
+| `id_parcel` normalisé en colonne une seule fois (`reset_index` dans `run_phenology.py`) plutôt que géré au cas par cas dans chaque fonction | Conditions défensives (`if "id_parcel" in df.columns else df.index`) dans chaque fonction de `divergence.py` | La gestion défensive locale s'est montrée incomplète en pratique (un seul appel sur deux corrigé, l'autre oublié) — normaliser une fois à la source élimine la classe d'erreur entière plutôt que de compter sur une vigilance répétée |
 | `rpg.py`/`cdse.py` : paramètres de campagne (`millesime`, `region_code`, `date_start`/`date_end`) explicites en argument, centralisés dans `src/config.py` | Constantes globales de module (comme dans les notebooks) | Une valeur de campagne figée en dur dans `src/` serait un couplage caché entre le code et une exécution donnée ; `src/config.py` reste une source de vérité unique, migrable vers des Variables Airflow sans réécriture des fonctions |
 ---
 
