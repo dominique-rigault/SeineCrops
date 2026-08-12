@@ -24,6 +24,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use(
+    "Agg"
+)  # backend non-interactif, thread-safe — le pipeline ne fait jamais
+# d'affichage interactif (uniquement savefig()+close()) ; le backend par défaut (TkAgg sur
+# Windows) provoque des RuntimeError "main thread is not in main loop" dès qu'un autre thread
+# tourne en parallèle (ex. RandomForestClassifier n_jobs=-1) — Tkinter n'est pas thread-safe.
+# Doit être défini ici, avant tout `import matplotlib.pyplot`, pour être pris en compte : les
+# modules de diagnostics (train.py, divergence.py, phenology.py, cdse.py...) importent tous
+# depuis ce module avant leur propre `import matplotlib.pyplot as plt` local.
+
 import pandas as pd
 
 from src.db.connection import PROJECT_ROOT
