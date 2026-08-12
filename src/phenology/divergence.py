@@ -238,15 +238,17 @@ def generer_diagnostics_divergence_spatiale(
 ) -> Path:
     """Carte de répartition spatiale des parcelles divergentes (portage cellule 8).
 
+    `df` doit avoir `id_parcel` en **colonne** (pas en index) — cf.
+    `scripts/run_phenology.py::preparer_feature_set`, qui normalise ce point
+    une seule fois en amont plutôt que chaque fonction ne le vérifie.
+
     Charge les centroïdes via `src.ml.split.charger_centroides` (réutilisé,
     pas dupliqué).
     """
     import matplotlib.pyplot as plt
 
     run_dir = nouveau_run_diagnostic(nom_module)
-    df_geo = charger_centroides(
-        df["id_parcel"] if "id_parcel" in df.columns else df.index
-    )
+    df_geo = charger_centroides(df["id_parcel"])
     df_diag = df[["id_parcel", "classe", "dist_classe", "divergent"]].merge(
         df_geo, on="id_parcel"
     )
@@ -269,7 +271,7 @@ def generer_diagnostics_divergence_spatiale(
     ax.set_xlabel("X (Lambert-93, m)")
     ax.set_ylabel("Y (Lambert-93, m)")
     ax.set_aspect("equal")
-    ax.legend(markerscale=12, loc="upper right")
+    ax.legend(markerscale=12, loc="upper left")
     ax.set_title("Répartition spatiale des parcelles divergentes")
     fig.tight_layout()
 
@@ -308,6 +310,9 @@ def calculer_flag_raccord_orbital(
     """Flag `zone_raccord_orbital` : parcelles proches du raccord entre deux
     orbites relatives sur une tuile donnée (portage cellule 10).
 
+    `df` doit avoir `id_parcel` en **colonne** (pas en index) — même
+    précondition que `generer_diagnostics_divergence_spatiale`.
+
     Nécessite un accès réseau (empreintes des scènes via l'API CDSE) — 2
     appels seulement (une scène par orbite), léger comparé à
     `bands.py`/`scl.py`, mais reste une dépendance réseau à chaque run.
@@ -339,9 +344,7 @@ def calculer_flag_raccord_orbital(
         crs="EPSG:4326",
     ).to_crs("EPSG:2154")
 
-    df_geo = charger_centroides(
-        df["id_parcel"] if "id_parcel" in df.columns else df.index
-    )
+    df_geo = charger_centroides(df["id_parcel"])
     points = gpd.GeoSeries(
         gpd.points_from_xy(df_geo["cx"], df_geo["cy"]), crs="EPSG:2154"
     )
@@ -383,6 +386,9 @@ def generer_diagnostics_synthese(
     """Croisement divergence (§5.2) × phénologie (§5.3) : une parcelle
     divergente a-t-elle aussi une durée de saison (LOS) atypique par
     rapport à sa classe ? Portage cellule 23.
+
+    `df` doit avoir `id_parcel` en **colonne** (pas en index) — même
+    précondition que `generer_diagnostics_divergence_spatiale`.
 
     Pas garanti — la divergence porte sur la forme globale du profil
     (704 features), pas spécifiquement sur SOS/POS/EOS — mais une

@@ -40,12 +40,19 @@ VERSION_PIPELINE = "S4-v1"
 
 
 def preparer_feature_set():
-    """§5.1 — réutilise `src.ml.features`, pas de logique propre à ce script."""
+    """§5.1 — réutilise `src.ml.features`, pas de logique propre à ce script.
+
+    `id_parcel` est ramené en colonne explicite (`reset_index`) — `src.ml.features`
+    le garde en index, mais tout `divergence.py`/`phenology.py` en aval suppose
+    une colonne (comme le notebook d'origine). Normalisé ici, une seule fois,
+    plutôt que de gérer l'ambiguïté index/colonne dans chaque fonction appelée.
+    """
     logger.info("=== §5.1 — Chargement et pivot (réutilise src.ml.features) ===")
     df_long = charger_feature_set_long()
     df_wide = pivoter_features(df_long)
     df_classes = charger_et_regrouper_classes()
     df = joindre_classes(df_wide, df_classes)
+    df = df.reset_index()  # id_parcel : index -> colonne
     return df
 
 
@@ -105,6 +112,7 @@ def extraire_phenologie_pipeline(df):
         grille["jours_grille"],
         df_pheno,
         df_ndvi_long,
+        grille["date_min"],
     )
     logger.info("Diagnostics phénologie : %s", rapport_pheno)
 
