@@ -47,8 +47,17 @@ def charger_contexte() -> dict:
 
     État partagé entre toutes les phases — chargé une seule fois plutôt que
     recalculé à chaque appel de fonction.
+
+    Normalise `scene_id` (retire un éventuel suffixe `.SAFE`) — le champ
+    `Name` du catalogue OData peut ou non l'inclure selon la version, et
+    `get_granule_id`/`download_band`/`_telecharger_scl` ajoutent déjà
+    `.SAFE` eux-mêmes lors de la construction des URLs. Omis lors du
+    portage initial de `03_series_s2.ipynb` (§3.1, juste après le
+    chargement du parquet) — provoquait un `.SAFE.SAFE` et un 404
+    systématique sur *toutes* les scènes, détecté au premier run réel.
     """
     df_dedup = pd.read_parquet(config.DATA_RAW_S2 / "catalogue_dedup.parquet")
+    df_dedup["scene_id"] = df_dedup["scene_id"].str.removesuffix(".SAFE")
     aoi = gpd.read_file(config.AOI_GEOJSON)
     grille = grid.calculer_grille_aoi(aoi)
     logger.info(
