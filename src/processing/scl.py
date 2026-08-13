@@ -94,7 +94,7 @@ def compute_f_valid_aoi(
     """
     with rasterio.open(scl_path) as src:
         scl_crs = src.crs or get_tile_crs(tile_id)
-        aoi_reproj = aoi_geom.to_crs(scl_crs.to_epsg())
+        aoi_reproj = aoi_geom.to_crs(scl_crs)
         shapes = [geom.__geo_interface__ for geom in aoi_reproj.geometry]
         try:
             data, _ = rasterio.mask.mask(src, shapes, crop=True, nodata=0)

@@ -243,7 +243,7 @@ def process_scene_bands(
         # B05 (20m natif) définit la grille de référence après crop AOI
         with rasterio.open(band_paths["B05"]) as ref:
             ref_crs = ref.crs or CRS.from_epsg(32600 + int(tile_id[:2]))
-            aoi_reproj = aoi.to_crs(ref_crs.to_epsg())
+            aoi_reproj = aoi.to_crs(ref_crs)
             shapes = [g.__geo_interface__ for g in aoi_reproj.geometry]
             b05_raw, transform = rasterio.mask.mask(ref, shapes, crop=True, nodata=0)
             ref_shape = b05_raw.shape[1:]

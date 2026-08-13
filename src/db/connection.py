@@ -14,12 +14,39 @@ Portage de `01_ingestion_rpg.ipynb` §Imports et paramètres globaux et
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg2
 from dotenv import load_dotenv
+
+# Windows : PostgreSQL/PostGIS installe sa propre libproj + proj.db, souvent
+# découverte par erreur par GDAL/PROJ à la place d'une copie embarquée dans le
+# venv — provoque des erreurs "PROJ: proj_create_from_database: ... whereas a
+# number >= N is expected. It comes from another PROJ installation."
+#
+# Point clé, découvert après un premier essai infructueux : PROJ met en cache
+# son chemin de recherche à l'initialisation de la bibliothèque C (déclenchée
+# par `import rasterio` lui-même) — fixer `PROJ_DATA` APRÈS cet import arrive
+# trop tard, la valeur est déjà figée en interne. Il faut localiser le dossier
+# de `rasterio` SANS l'importer (`importlib.util.find_spec`, qui ne déclenche
+# pas l'exécution de son `__init__.py`) pour fixer la variable d'environnement
+# avant le véritable `import rasterio`, où qu'il ait lieu dans le process.
+#
+# On pointe vers la copie de `rasterio` (pas `pyproj`) : les deux paquets
+# embarquent chacun leur propre PROJ, avec des versions de schéma différentes
+# — le GDAL interne à `rasterio` réclame le schéma le plus récent, donc c'est
+# sa copie qui doit faire foi pour tout le process.
+_rasterio_spec = importlib.util.find_spec("rasterio")
+if _rasterio_spec is not None and _rasterio_spec.origin is not None:
+    _rasterio_proj_data = Path(_rasterio_spec.origin).parent / "proj_data"
+    if (_rasterio_proj_data / "proj.db").exists():
+        os.environ["PROJ_DATA"] = str(_rasterio_proj_data)
+        os.environ["PROJ_LIB"] = str(
+            _rasterio_proj_data
+        )  # nom historique, gardé pour compat GDAL plus anciens
 
 
 def find_project_root(marker: str = ".projectroot") -> Path:
