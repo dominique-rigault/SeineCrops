@@ -653,15 +653,15 @@ maintenant intégralement portés (`src/db/`, `src/reporting/`,
 Restent : le DAG Airflow lui-même, et les tests automatisés (aucun test
 écrit à ce stade pour l'ensemble de `src/`).
 
-#### Bugs trouvés lors des tests manuels (`run_ml.py`, `run_phenology.py`)
+#### Bugs trouvés lors des tests manuels (`run_ml.py`, `run_phenology.py`, `run_processing.py`)
 
 Suite de la stratégie déjà appliquée à `run_ingestion.py` : tester chaque
 script manuellement avant de construire le DAG, plutôt que de découvrir
 ces bugs une fois encapsulés dans des tâches Airflow. Statut des 5
 scripts à date : `run_ingestion.py` ✅, `run_ml.py` (baseline seule,
 `--skip-search`) ✅, `run_ml.py` (avec `RandomizedSearchCV`) ⏳ crash à
-revalider après correctif, `run_phenology.py` ✅, `run_processing.py` ⏳
-pas encore testé.
+revalider après correctif, `run_phenology.py` ✅, `run_processing.py` §3.1
+✅ et §3.2 ✅ (16/16 mois complets), §3.3/§3.4-3.6 ⏳ pas encore testées.
 
 **Backend matplotlib forcé en `Agg`** (`src/reporting/diagnostics.py`,
 transverse) : le backend interactif par défaut (`TkAgg` sur Windows)
@@ -734,6 +734,78 @@ fauchées satellites (cohérent avec le flag raccord orbital déjà en place —
 13,6 % des parcelles concernées), un effet de littoral plausible, et 3
 amas moins attendus, non expliqués — investigation reportée à plus tard.
 
+**Suffixe `.SAFE` non normalisé** (`scripts/run_processing.py`) : le
+champ `Name` du catalogue OData peut ou non inclure `.SAFE` selon la
+version — `get_granule_id`/`download_band`/`_telecharger_scl` l'ajoutent
+déjà eux-mêmes lors de la construction des URLs. Cette normalisation
+existait dans le notebook source (§3.1, juste après le chargement du
+parquet) mais avait été omise lors du portage initial vers
+`src/processing/` — provoquait un `.SAFE.SAFE` et un 404 systématique sur
+**toutes** les scènes. Invisible dans `run_ingestion.py`, qui ne descend
+jamais dans l'arborescence `Nodes(...)` d'un produit (seulement les
+métadonnées catalogue). Corrigé par `str.removesuffix(".SAFE")` dans
+`charger_contexte()`, au même endroit logique que le notebook.
+
+**Conflits PROJ/CRS Windows — trois sources distinctes, découvertes
+successivement** : chaque correctif a révélé la couche suivante, jusqu'à
+résolution complète.
+1. `scl.py`/`bands.py` : `.to_crs(crs.to_epsg())` repassait par une
+   résolution EPSG (déclenchant une consultation de `proj.db`) plutôt que
+   d'utiliser l'objet CRS déjà disponible — remplacé par `.to_crs(crs)` direct.
+2. `src/db/connection.py` : GDAL découvrait par défaut la `proj.db` de
+   PostgreSQL/PostGIS (schéma trop ancien — `DATABASE.LAYOUT.VERSION.MINOR = 2`
+   quand `≥ 5` est attendu) au lieu de celle du venv.
+3. Une fois `PROJ_DATA` pointé vers la `proj.db` de `rasterio` (schéma
+   correct cette fois), l'erreur persistait quand même — **PROJ met en
+   cache son chemin de recherche à l'initialisation de la bibliothèque C**,
+   déclenchée par `import rasterio` lui-même ; fixer la variable
+   d'environnement *après* cet import arrivait trop tard, la valeur était
+   déjà figée en interne. Corrigé en localisant `rasterio` via
+   `importlib.util.find_spec` (qui ne déclenche pas l'exécution de son
+   `__init__.py`, donc pas l'initialisation de GDAL/PROJ) pour fixer
+   `PROJ_DATA` *avant* le véritable `import rasterio`, où qu'il ait lieu
+   dans le process.
+
+Non fatal en pratique (le run continuait malgré le bruit, GDAL retombant
+sur un comportement dégradé) mais très bruyant, et une résolution
+silencieusement dégradée restait un risque à écarter plutôt qu'à ignorer.
+Validé : `CRS.from_epsg(32630)` se résout proprement sans erreur après
+les trois correctifs. Argument concret de plus en faveur de la
+conteneurisation Docker déjà prévue (`methode.md` §S6) — un environnement
+figé éliminerait cette classe de fragilité par construction.
+
+**Nettoyage des bandes/indices d'exécutions antérieures — décision
+actée** : aucun mécanisme ne détecte qu'un fichier bande/indice déjà
+présent sur disque a été produit par une version du code désormais
+corrigée (notebook, ou `src/` avant un correctif comme le fallback CRS
+UTM déjà documenté) — seule sa présence est vérifiée, jamais sa
+provenance. Concrètement rencontré : des fichiers `31UCR` laissés par une
+exécution notebook antérieure au correctif CRS auraient été silencieusement
+réutilisés (skippés) sans le nettoyage manuel effectué avant ce run.
+Deux options actées :
+- **Option 1 (retenue immédiatement)** : procédure manuelle documentée —
+  toute correction touchant `resample_to_20m`/`compute_indices`/le calcul
+  géométrique impose de vider `data/raw/s2/bands/`/`data/raw/s2/indices/`
+  avant le prochain run.
+- **Option 2 (différée à la conception du DAG)** : marqueur de version
+  embarqué (dans l'esprit de `VERSION_PIPELINE` déjà utilisé par
+  `persist.py`), comparé avant de considérer un fichier existant comme
+  valide — nécessaire une fois le déclenchement automatisé (planifié),
+  qui ne pourra plus compter sur une vérification humaine après chaque
+  changement de code touchant le calcul raster.
+
+**Granularité du rafraîchissement de token CDSE — amélioration identifiée,
+non corrigée** : `traiter_bandes_indices` rafraîchit le token une fois par
+scène, pas avant chaque bande individuelle (7 appels réseau séquentiels
+par scène) — a provoqué 3 échecs par expiration en cours de scène sur 552
+(`401 Unauthorized`, toutes sur la tuile `31UCQ`, cause de cette
+concentration non déterminée). Sans conséquence pratique : `qc.
+verifier_completude_fichiers` les détecte (`MANQUANT` complet, aucun
+fichier partiel créé grâce à l'ordre des opérations dans
+`process_scene_bands`), et l'idempotence les rattrape automatiquement au
+passage suivant. Amélioration à envisager avant le DAG plutôt qu'urgente
+maintenant.
+
 #### Tests — deux échelles, à ne pas confondre
 
 **Tests automatisés (pytest, CI GitHub Actions)**, à deux échelles :
@@ -798,6 +870,8 @@ Dictionnaire de données PostGIS (par table `raw.*`/`derived.*` : colonnes, type
 | `zonal.py` : connexion PostGIS ouverte/fermée explicitement (`get_connection()` + `conn.close()` en `finally`) | `with get_connection() as conn:` comme le reste de `src/` | Chez `psycopg2`, le context manager d'une connexion ne gère que la transaction, pas la fermeture — sans conséquence pour des appels courts, mais rendu explicite ici car la connexion vit plusieurs heures à travers des opérations lourdes séquentielles. Question ouverte : harmoniser `rpg.py`/`qa.py` ou laisser tel quel ? |
 | Backend matplotlib forcé en `Agg` dans `src/reporting/diagnostics.py` | Laisser le backend par défaut (`TkAgg`) | Tkinter n'est pas thread-safe — provoque des crashs dès qu'un autre thread tourne en parallèle (`RandomForestClassifier n_jobs=-1`). Le pipeline ne fait jamais d'affichage interactif, `Agg` est strictement suffisant |
 | `id_parcel` normalisé en colonne une seule fois (`reset_index` dans `run_phenology.py`) plutôt que géré au cas par cas dans chaque fonction | Conditions défensives (`if "id_parcel" in df.columns else df.index`) dans chaque fonction de `divergence.py` | La gestion défensive locale s'est montrée incomplète en pratique (un seul appel sur deux corrigé, l'autre oublié) — normaliser une fois à la source élimine la classe d'erreur entière plutôt que de compter sur une vigilance répétée |
+| Nettoyage des bandes/indices obsolètes : procédure manuelle maintenant, marqueur de version embarqué avec le DAG | Marqueur de version dès maintenant | La complexité (instrumenter chaque fonction d'écriture) n'est justifiée que par un déclenchement automatisé sans supervision humaine — pas encore le cas tant que les scripts sont lancés manuellement |
+| `PROJ_DATA` fixé via `importlib.util.find_spec("rasterio")` (sans import) plutôt qu'après `import rasterio` | Fixer la variable après import, ou pointer vers la `proj.db` de `pyproj` | PROJ met en cache son chemin de recherche à l'initialisation de la bibliothèque C — une variable fixée après `import rasterio` arrive trop tard. `rasterio` et `pyproj` embarquent chacun leur propre PROJ avec des versions de schéma différentes ; c'est celle de `rasterio` qui doit faire foi (schéma le plus récent réclamé) |
 | `rpg.py`/`cdse.py` : paramètres de campagne (`millesime`, `region_code`, `date_start`/`date_end`) explicites en argument, centralisés dans `src/config.py` | Constantes globales de module (comme dans les notebooks) | Une valeur de campagne figée en dur dans `src/` serait un couplage caché entre le code et une exécution donnée ; `src/config.py` reste une source de vérité unique, migrable vers des Variables Airflow sans réécriture des fonctions |
 ---
 
