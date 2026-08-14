@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import gc
 import logging
+import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -62,38 +64,72 @@ def compute_monthly_composite(
 
     src_dir = indices_dir if variable in ("NDVI", "EVI", "NDWI", "NDRE") else bands_dir
 
-    try:
-        daily_images = []
+    # Chronométrage par étape — pour distinguer I/O disque (reprojection, lecture des
+    # fichiers sources) de calcul CPU pur (médianes), diagnostic ajouté suite à un
+    # ralentissement observé (CPU ~22%, disque/réseau ~0% pendant le run).
+    t_reproject = 0.0
+    t_daily_median = 0.0
+    n_fichiers_lus = 0
 
-        # Étape 1 — image journalière par date
+    try:
+        n_dates = len(scene_ids_par_date)
+        # Pré-alloué plutôt qu'accumulé en liste + np.stack : évite une copie
+        # complète supplémentaire en mémoire à l'étape 2 (jusqu'à ~3 Go de pic
+        # transitoire sur les mois à 14 dates, grille 4824×5448 en float32) —
+        # détecté via pression mémoire/swap observée sur un run réel.
+        daily_stack = np.full(
+            (n_dates, grille["height"], grille["width"]), np.nan, dtype=np.float32
+        )
+        n_dates_valides = 0
+
+        # Étape 1 — image journalière par date, écrite directement dans daily_stack
         for date_str, scene_ids in scene_ids_par_date.items():
             tuile_arrays = []
             for scene_id in scene_ids:
                 tile_id = scene_id.split("_")[5][1:]
                 src_path = src_dir / tile_id / f"{scene_id}_{variable}.tif"
                 if src_path.exists():
+                    t0 = time.perf_counter()
                     tuile_arrays.append(reproject_to_aoi(src_path, grille))
+                    t_reproject += time.perf_counter() - t0
+                    n_fichiers_lus += 1
 
             if tuile_arrays:
                 if len(tuile_arrays) == 1:
-                    daily_images.append(tuile_arrays[0])
+                    daily_stack[n_dates_valides] = tuile_arrays[0]
                 else:
-                    daily_images.append(
-                        np.nanmedian(np.stack(tuile_arrays, axis=0), axis=0)
-                    )
+                    # all-NaN attendu en bord d'AOI / entre tuiles sans recouvrement —
+                    # résultat NaN correct, cf. qc.py pour le détail du correctif (np.errstate
+                    # ne suffit pas, il faut warnings.simplefilter).
+                    t0 = time.perf_counter()
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+                        daily_stack[n_dates_valides] = np.nanmedian(
+                            np.stack(tuile_arrays, axis=0), axis=0
+                        )
+                    t_daily_median += time.perf_counter() - t0
+                n_dates_valides += 1
             del tuile_arrays
 
-        if not daily_images:
+        if n_dates_valides == 0:
             return (mois, variable, "VIDE")
 
-        # Étape 2 — composite mensuel
-        stack = np.stack(daily_images, axis=0)
-        composite = np.nanmedian(stack, axis=0).astype(np.float32)
+        # Étape 2 — composite mensuel, sur les seules lignes effectivement remplies
+        # all-NaN attendu pour un pixel jamais valide sur tout le mois — devient -9999
+        # (nodata) juste après, résultat correct.
+        t0 = time.perf_counter()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            composite = np.nanmedian(daily_stack[:n_dates_valides], axis=0).astype(
+                np.float32
+            )
+        t_monthly_median = time.perf_counter() - t0
         composite[np.isnan(composite)] = -9999.0
-        del daily_images, stack
+        del daily_stack
         gc.collect()
 
         out_dir.mkdir(parents=True, exist_ok=True)
+        t0 = time.perf_counter()
         with rasterio.open(
             out_path,
             "w",
@@ -111,6 +147,20 @@ def compute_monthly_composite(
             blockysize=256,
         ) as dst:
             dst.write(composite, 1)
+        t_write = time.perf_counter() - t0
+
+        logger.info(
+            "%s/%s — reprojection %.1fs (%d fichiers, %.3fs/fichier), médiane journ. %.1fs, "
+            "médiane mens. %.1fs, écriture %.1fs",
+            mois,
+            variable,
+            t_reproject,
+            n_fichiers_lus,
+            t_reproject / n_fichiers_lus if n_fichiers_lus else 0.0,
+            t_daily_median,
+            t_monthly_median,
+            t_write,
+        )
 
         del composite
         gc.collect()
