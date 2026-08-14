@@ -660,8 +660,12 @@ script manuellement avant de construire le DAG, plutôt que de découvrir
 ces bugs une fois encapsulés dans des tâches Airflow. Statut des 5
 scripts à date : `run_ingestion.py` ✅, `run_ml.py` (baseline seule,
 `--skip-search`) ✅, `run_ml.py` (avec `RandomizedSearchCV`) ⏳ crash à
-revalider après correctif, `run_phenology.py` ✅, `run_processing.py` §3.1
-✅ et §3.2 ✅ (16/16 mois complets), §3.3/§3.4-3.6 ⏳ pas encore testées.
+revalider après correctif (backend `Agg` en place, jamais retesté),
+`run_phenology.py` ✅, **`run_processing.py` ✅ validé en entier, §3.1 → §3.6**
+(552/552 scènes, 176/176 composites, 11 458 381 lignes `s2_parcelles_monthly`,
+2 595 821 lignes `s2_parcelles_ndvi_dates`, 0 doublon détecté par le QC
+intégré). Dernier script encore en attente : `run_ml.py` avec recherche
+d'hyperparamètres.
 
 **Backend matplotlib forcé en `Agg`** (`src/reporting/diagnostics.py`,
 transverse) : le backend interactif par défaut (`TkAgg` sur Windows)
