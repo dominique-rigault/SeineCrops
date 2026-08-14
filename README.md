@@ -45,24 +45,24 @@ Orchestration : Airflow · CI/CD : GitHub Actions
 
 ## Statut
 
-> 🚧 **En cours de construction** — sprint S6 (industrialisation)
+> 🚧 **En cours de construction** - sprint S6 (industrialisation)
 
 | Sprint | Objectif | Statut |
 |---|---|---|
-| S0 — Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
-| S1 — Données | Disponibilité S2 + ingestion RPG dans PostGIS | ✅ |
-| S2 — Séries | Téléchargement SCL, indices, composite mensuel, table spatio-temporelle | ✅ |
-| S3 — Classification | Baseline RF, évaluation, option DL | ✅ |
-| S4 — Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ✅ |
-| S5 — Service | FastAPI + carte web | ✅ |
-| S6 — Industrialisation | Airflow, tests, CI/CD, documentation | ⬜ |
+| S0 - Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
+| S1 - Données | Disponibilité S2 + ingestion RPG dans PostGIS | ✅ |
+| S2 - Séries | Téléchargement SCL, indices, composite mensuel, table spatio-temporelle | ✅ |
+| S3 - Classification | Baseline RF, évaluation, option DL | ✅ |
+| S4 - Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ✅ |
+| S5 - Service | FastAPI + carte web | ✅ |
+| S6 - Industrialisation | Airflow, tests, CI/CD, documentation | ⬜ |
 
 ---
 
 ## Zone d'étude & période
 
 - **AOI** : Pays de Caux + plateau du Neubourg (Eure), de part et d'autre
-  de la Seine, de la pointe du Havre au sud du Neubourg — openfield grandes
+  de la Seine, de la pointe du Havre au sud du Neubourg - openfield grandes
   cultures. Surface mesurée : **3 349 km²** (80 689 parcelles), 4 tuiles
   Sentinel-2 (30UYA · 31UCR · 30UYV · 31UCQ).
 - **Période** : septembre N → décembre N+1 (~16 mois, campagne RPG N+1).
@@ -75,7 +75,7 @@ Orchestration : Airflow · CI/CD : GitHub Actions
 | Donnée | Source | Licence |
 |---|---|---|
 | Sentinel-2 L2A | Copernicus Data Space Ecosystem (CDSE) | Politique Copernicus (libre) |
-| RPG parcelles + culture | IGN — archive régionale GeoPackage v3.0 (R28, millésime 2024) | Licence Ouverte Etalab v2 |
+| RPG parcelles + culture | IGN - archive régionale GeoPackage v3.0 (R28, millésime 2024) | Licence Ouverte Etalab v2 |
 | RPG codes cultures | Géoplateforme WFS `RPG.2024:codes_cultures` | Licence Ouverte Etalab v2 |
 | Masque nuages | Bande SCL du L2A | idem S2 |
 | Météo (optionnel) | meteo.data.gouv.fr / ERA5 CDS | Libre |
@@ -159,7 +159,7 @@ SeineCrops/
 │       ├── queries.py        # requêtes SQL + assemblage ligne DB → modèle Pydantic
 │       └── main.py           # application FastAPI, routes /parcelles/{id}, /parcelles/{id}/profil, /parcelles?bbox=
 ├── web/
-│   └── index.html            # carte web MapLibre (S5) — fond OSM, couche parcelles, panneau de détail + graphique NDVI
+│   └── index.html            # carte web MapLibre (S5) - fond OSM, couche parcelles, panneau de détail + graphique NDVI
 ├── tests/
 │   ├── conftest.py
 │   └── api/
@@ -239,7 +239,7 @@ psql -U postgres -c "CREATE DATABASE seinecrops;"
 psql -U postgres -d seinecrops -f src/db/init.sql
 ```
 
-**Ingestion RPG (sprint S1 — terminée)**
+**Ingestion RPG (sprint S1 - terminée)**
 
 ```bash
 # Télécharger l'archive régionale RPG depuis la page produit IGN :
@@ -260,24 +260,24 @@ jupyter notebook notebooks/01_ingestion_rpg.ipynb
 > Le chargement PostGIS passe par le driver PGDUMP de GDAL + `psql`
 > (`ogr2ogr` et le driver PostgreSQL natif sont absents de cet environnement Windows).
 
-**Diagnostic disponibilité Sentinel-2 (sprint S1 — terminé)**
+**Diagnostic disponibilité Sentinel-2 (sprint S1 - terminé)**
 
 ```bash
 # Compte CDSE requis (voir ci-dessus). Credentials renseignés dans .env.
 jupyter notebook notebooks/02_disponibilite_s2.ipynb
 # Section 1 : authentification CDSE (OAuth, rafraîchissement token)
-# Section 2 : requête catalogue OData — 4 tuiles, pagination, sans filtre nuage
+# Section 2 : requête catalogue OData - 4 tuiles, pagination, sans filtre nuage
 # Section 3 : structuration DataFrame (pair, date, cloud_cover_catalogue, f_valid_aoi)
 # Section 4 : déduplication par baseline + statistiques mensuelles (partiel / quasi complet)
 # Section 5 : histogramme de disponibilité + AVAILABILITY_REPORT.json
 ```
 
-> Diagnostic catalogue pur — aucune image téléchargée.
+> Diagnostic catalogue pur - aucune image téléchargée.
 > La colonne `f_valid_aoi` est provisionnée à `NaN` ; elle sera calculée en sprint S2
 > par téléchargement de la bande SCL (60 m) et calcul de la fraction de pixels valides
 > sur l'AOI (classes SCL invalides : 3, 8, 9, 10, 11).
 
-**Séries temporelles Sentinel-2 (sprint S2 — terminé)**
+**Séries temporelles Sentinel-2 (sprint S2 - terminé)**
 
 ```bash
 # Compte CDSE requis. Credentials renseignés dans .env.
@@ -300,43 +300,43 @@ jupyter notebook notebooks/03_series_s2.ipynb
 
 > *Cette section sera alimentée jalon par jalon.*
 
-**S1 — Ingestion RPG (terminée)**
+**S1 - Ingestion RPG (terminée)**
 
 RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
 
 | Indicateur | Normandie entière | AOI (Caux + Neubourg) |
 |---|---|---|
 | Parcelles | 528 950 | 80 689 |
-| Surface totale | — | 334 943 ha (3 349 km²) |
-| Surface moyenne | 3,6 ha (médiane 2,1 ha) | — |
-| Surface max | 800,9 ha | — |
+| Surface totale | - | 334 943 ha (3 349 km²) |
+| Surface moyenne | 3,6 ha (médiane 2,1 ha) | - |
+| Surface max | 800,9 ha | - |
 | Emprise (Lambert-93) | x : 343 139 – 613 528 · y : 6 788 983 – 6 998 373 | x : 487 964 – 582 799 · y : 6 875 633 – 6 981 896 |
-| Top cultures (échantillon) | SNE, JAC, PPH, BTA, BOR, PTR | — |
-| Codes cultures (référentiel national) | 147 codes | — |
-| Géométries invalides (avant filtre AOI) | 0 | — |
-| Index spatial (GIST) + attributaire (`code_cultu`) | — | ✅ |
+| Top cultures (échantillon) | SNE, JAC, PPH, BTA, BOR, PTR | - |
+| Codes cultures (référentiel national) | 147 codes | - |
+| Géométries invalides (avant filtre AOI) | 0 | - |
+| Index spatial (GIST) + attributaire (`code_cultu`) | - | ✅ |
 
 > Parcelles intersectant l'AOI conservées **entières** (pas de découpe à la frontière) :
 > une parcelle tronquée perdrait sa cohérence phénologique pour la classification.
 > La QA géométrique (`ST_IsValid` / `ST_MakeValid`) est appliquée à `raw` **avant** le
 > filtre AOI, pour qu'aucune parcelle invalide ne soit silencieusement exclue sans trace.
 
-**S1 — Disponibilité Sentinel-2 (terminée)**
+**S1 - Disponibilité Sentinel-2 (terminée)**
 
 Catalogue CDSE, 4 tuiles (30UYA · 31UCR · 30UYV · 31UCQ), fenêtre sept. 2023 → déc. 2024 :
 
 | Indicateur | Valeur |
 |---|---|
 | Scènes catalogue brutes (4 tuiles) | 1 071 (après déduplication baseline) |
-| Jours couverts — couverture partielle (≥ 1 tuile) | 292 / 488 jours |
+| Jours couverts - couverture partielle (≥ 1 tuile) | 292 / 488 jours |
 | Mois le plus creux | *voir* `AVAILABILITY_REPORT.json` |
 
-> Aucun filtre de couverture nuageuse appliqué au catalogue — toutes les scènes L2A
+> Aucun filtre de couverture nuageuse appliqué au catalogue - toutes les scènes L2A
 > disponibles sont recensées. La disponibilité effective sur l'AOI (`f_valid_aoi`)
 > est calculée en sprint S2 à partir de la bande SCL.
 > Voir `data/raw/s2/AVAILABILITY_REPORT.json` pour le détail mensuel.
 
-**S2 — Séries temporelles (terminé)**
+**S2 - Séries temporelles (terminé)**
 
 Table spatio-temporelle `derived.s2_parcelles_monthly` :
 
@@ -357,7 +357,7 @@ Table spatio-temporelle `derived.s2_parcelles_monthly` :
 > rasterisation. Correction EVI août 2024 : dénominateur instable en pleine
 > végétation, recalculé depuis les composites de bandes.
 
-**S3 — Classification (terminé)**
+**S3 - Classification (terminé)**
 
 Baseline Random Forest (`n_estimators=300`, `max_depth=30`, `min_samples_leaf=5`,
 `class_weight="balanced"`), split spatial par blocs (75 blocs) :
@@ -376,10 +376,10 @@ Baseline Random Forest (`n_estimators=300`, `max_depth=30`, `min_samples_leaf=5`
 > pour un surapprentissage aggravé (écart train/test 0,060 → 0,107), la CV interne
 > étant aveugle au split spatial par blocs. Trois features temporelles dérivées
 > (amplitude NDVI, jour du maximum, pente mai→août) testées et écartées également :
-> gain nul, la confusion `autres`/`prairie` se redistribue sans se réduire — indice
+> gain nul, la confusion `autres`/`prairie` se redistribue sans se réduire - indice
 > d'un problème de qualité de label RPG plutôt que de feature manquante.
 
-**S4 — Divergence & phénologie (terminé)**
+**S4 - Divergence & phénologie (terminé)**
 
 Distance RMS standardisée (z-score) au profil médian de classe ; lissage Whittaker
 pondéré (λ=800) pour SOS/POS/EOS/LOS, fenêtres calendaires par classe :
@@ -405,7 +405,7 @@ pondéré (λ=800) pour SOS/POS/EOS/LOS, fenêtres calendaires par classe :
 > pas un échec de méthode. Flag `zone_raccord_orbital` ajouté pour isoler la bande
 > de divergence structurelle liée au raccord orbital 51/94 sur la tuile 30UYV.
 
-**S5 — Service (terminé)**
+**S5 - Service (terminé)**
 
 FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de build :
 
@@ -413,11 +413,11 @@ FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de bui
 |---|---|
 | Endpoints | `GET /parcelles/{id}`, `GET /parcelles/{id}/profil`, `GET /parcelles?bbox=`, `GET /health` |
 | Tests | 9 tests d'intégration PostGIS + 2 tests unitaires (`pytest`) |
-| `BBOX_MAX_AREA_KM2` / `limit` | 50 km² / 2000 — mesurés sur la densité réelle de parcelles (24,1/km²) |
+| `BBOX_MAX_AREA_KM2` / `limit` | 50 km² / 2000 - mesurés sur la densité réelle de parcelles (24,1/km²) |
 | Tolérance de simplification géométrique | 5 m (médiane 18 → 7 sommets/parcelle) |
 | Carte web | fond OSM (raster, sans clé API), couleurs liées aux cultures réelles (colza jaune, lin bleu…), panneau de détail + graphique NDVI au clic |
 
-> Pagination par `offset` volontairement non implémentée (cf. `methode.md` §S5) — le
+> Pagination par `offset` volontairement non implémentée (cf. `methode.md` §S5) - le
 > geste naturel d'une carte interactive est de réduire le `bbox` (zoom/déplacement),
 > pas de paginer une même zone.
 
@@ -430,7 +430,7 @@ FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de bui
 - [Cadrage du projet](./cadrage/SeineCrops_cadrage.pdf)
 - [Note de méthode](./cadrage/methode.md)
 - [Dictionnaire de données PostGIS](./docs/dictionnaire.md) *(à venir)*
-- [Référence API](./docs/api.md) *(à venir — générée par FastAPI/OpenAPI)*
+- [Référence API](./docs/api.md) *(à venir - générée par FastAPI/OpenAPI)*
 
 ---
 
@@ -442,7 +442,7 @@ par l'ASP en France. La faisabilité scientifique de la classification par séri
 temporelles S2 est établie (BreizhCrops, PASTIS, iota2/CESBIO) ; SeineCrops
 vise une **démonstration d'ingénierie opérationnelle de bout en bout** en open source.
 
-**Référence** : ASP — [Système de suivi des surfaces agricoles en temps réel (3STR)](https://www.asp.gouv.fr/missions-et-expertise/missions/pac-2023-2027/systeme-de-suivi-des-surfaces-agricoles-en-temps-reel)
+**Référence** : ASP - [Système de suivi des surfaces agricoles en temps réel (3STR)](https://www.asp.gouv.fr/missions-et-expertise/missions/pac-2023-2027/systeme-de-suivi-des-surfaces-agricoles-en-temps-reel)
 
 ---
 
