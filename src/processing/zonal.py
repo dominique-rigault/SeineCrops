@@ -24,6 +24,7 @@ runs, contrairement aux prédictions de classification qui appellent
 from __future__ import annotations
 
 import logging
+import warnings
 from pathlib import Path
 
 import geopandas as gpd
@@ -467,7 +468,13 @@ def charger_ndvi_dates_vers_postgis(
         )
         for k, p in enumerate(paths):
             stack[k] = reproject_to_aoi(p, grille)
-        with np.errstate(all="ignore"):
+        # all-NaN attendu en bord d'AOI / entre tuiles sans recouvrement ce jour précis
+        # — résultat NaN correct, seul l'avertissement est du bruit. np.errstate ne
+        # suffit pas ici (avertissement émis via le module `warnings` standard, pas les
+        # indicateurs flottants bas niveau que np.errstate contrôle) — corrigé après
+        # vérification empirique, cf. qc.py pour le détail.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
             daily = np.nanmedian(stack, axis=0)
         del stack
 

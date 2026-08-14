@@ -15,6 +15,7 @@ pas seulement pour les étapes d'acquisition.
 from __future__ import annotations
 
 import logging
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -247,11 +248,19 @@ def calculer_couverture_temporelle(
                 if src_path.exists():
                     tuile_arrays.append(reproject_to_aoi(src_path, grille))
             if tuile_arrays:
-                jour = (
-                    tuile_arrays[0]
-                    if len(tuile_arrays) == 1
-                    else np.nanmedian(np.stack(tuile_arrays, axis=0), axis=0)
-                )
+                if len(tuile_arrays) == 1:
+                    jour = tuile_arrays[0]
+                else:
+                    # all-NaN attendu en bord d'AOI / entre tuiles sans recouvrement ce
+                    # jour précis — le résultat NaN est correct, seul l'avertissement est
+                    # du bruit. np.errstate ne supprime PAS ce type d'avertissement (émis
+                    # via le module `warnings` standard, pas les indicateurs flottants bas
+                    # niveau que np.errstate contrôle) — vérifié empiriquement avant
+                    # d'écrire ce correctif, après avoir constaté que le pattern déjà
+                    # utilisé dans zonal.py était en réalité inefficace pour ce cas précis.
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", category=RuntimeWarning)
+                        jour = np.nanmedian(np.stack(tuile_arrays, axis=0), axis=0)
                 n_valid_mois += (~np.isnan(jour)).astype(np.int16)
 
         pct_zero = float(np.mean(n_valid_mois == 0) * 100)
