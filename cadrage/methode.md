@@ -1039,3 +1039,156 @@ qui reste la cause principale de la lenteur.
 **Bimodalité du SOS pour les céréales d'hiver, liée au tallage automnal (limite biologique, non corrigée)** : la distribution du LOS des parcelles `cereales_hiver` fiables et conformes est franchement bimodale (~150-165 j et ~215-235 j), la médiane globale (180 j) tombant dans le creux entre les deux modes. Investigué et écarté : mélange blé/orge dans `GROUP_MAP` (le blé tendre seul, n=12 832, reproduit la même bimodalité que l'ensemble) ; clivage géographique Pays de Caux / Neubourg (les deux zones se superposent, même creux dans les deux). Le clivage vient entièrement du SOS (mode bas : SOS médian jour 175, n=5 371 ; mode haut : SOS médian jour 100, n=4 518), l'EOS étant quasi identique entre les deux modes (330 vs 325 j). **Cause retenue** : une céréale d'hiver a une croissance en deux temps (tallage d'automne, pause hivernale, montée de printemps) - pour une partie des parcelles, la pousse d'automne suffit à franchir le seuil d'amplitude de 20 % (SOS précoce, jour ~100) ; pour la majorité, seule la montée de printemps le franchit (SOS tardif, jour ~175). Un seuil d'amplitude unique est structurellement ambigu face à ce type de profil à deux temps. **Non corrigé** : la piste testée (seuil basé sur un percentile 10 plutôt qu'un minimum ponctuel, pour écarter l'hypothèse d'un point aberrant isolé) n'améliore le taux de "LOS proche de la médiane" que de 62,7 % à 63,8 % - négligeable, confirmant que la cause est bien la biologie de la culture, pas un artefact de méthode corrigible localement.
 
 **"LOS du profil médian" ≠ "LOS médian des parcelles" - piège d'agrégation (règle méthodologique retenue)** : extraire SOS/POS/EOS sur une courbe composite (médiane des profils individuels d'une classe) donne un résultat non représentatif des parcelles individuelles, en particulier pour les classes bimodales ou hétérogènes - l'écart peut atteindre +120 j (`cereales_hiver` : 180 j en médiane des parcelles fiables contre 300 j sur le profil médian composite, qui mélange les deux modes de SOS en une forme lissée démarrant tôt et s'étalant tard). Écarts observés : betterave +50 j, colza +30 j, maïs +65 j, lin +15 j ; seul `legumes_fleurs` s'inverse (−30 j), cohérent avec son hétérogénéité déjà connue (cycles très différents qui se neutralisent partiellement en médiane). **Règle retenue pour toute statistique de classe en aval** : toujours agréger les métriques extraites parcelle par parcelle ("LOS médian des parcelles fiables"), jamais extraire sur un profil déjà agrégé.
+
+
+---
+
+#### Conception du DAG Airflow - décisions actées avant écriture du code
+
+Dernier chantier du sprint S6, après validation complète de tous les
+scripts manuels (`run_ingestion.py`, `run_processing.py`, `run_ml.py`,
+`run_phenology.py`). Décisions actées en discussion avant d'écrire le
+DAG, plutôt que découvertes en cours de route comme pour les scripts
+manuels.
+
+**Liste des tâches et dépendances** : chaque frontière de fonction déjà
+naturelle dans les scripts manuels devient une tâche - pas de nouveau
+découpage inventé. Graphe :
+
+```
+ingestion_rpg ──┐
+                ├──► disponibilite_s2 ──► scl_f_valid_aoi ──► traitement_bandes_indices ──► qc_fichiers
+                │                                                                              │
+                │                                                    ┌─────────────────────────┤
+                │                                                    ▼                         ▼
+                │                                          qc_couverture_temporelle    nettoyage_intermediaires
+                │                                                    │                    (conditionnel, cf. ci-dessous)
+                │                                                    ▼
+                │                                          composites_mensuels
+                │                                                    │
+                │                        ┌───────────────────────────┼───────────────────────┐
+                │                        ▼                           ▼                        ▼
+                │              stats_zonales_mensuelles   completude_zonale        ndvi_zonale_dates
+                │                        │                           │                        │
+                │                        └───────────────┬───────────┘                        │
+                │                                         ▼                                   │
+                └──────────────────────────────► entrainement_ml (§4.1-4.4)                    │
+                                                           │                                    │
+                                                           └──────────────► divergence_phenologie (§5.1-5.4)
+                                                                                     ▲
+                                                                                     └── (dépend aussi de ndvi_zonale_dates)
+```
+
+**TaskFlow API** (`@task`), pas `PythonOperator` classique - plus lisible,
+gestion automatique du passage de données entre tâches.
+
+**Nettoyage conditionnel** : `nettoyage_intermediaires` (appelle
+`qc.supprimer_jp2`) ne s'exécute que si `qc_fichiers` a réussi
+**sans problème détecté** - pas seulement "après elle" au sens de l'ordre
+d'exécution. `trigger_rule="all_success"` (le défaut Airflow), à vérifier
+explicitement vu l'enjeu (leçon S2 déjà actée : suppression prématurée
+avant QC → correction rétroactive impossible).
+
+**Pool de ressources dédié** (`pool="lourd_memoire"`, `slots=1`) pour
+`traitement_bandes_indices`, `composites_mensuels`, `entrainement_ml` —
+garantit qu'aucune paire de ces tâches ne tourne jamais en parallèle,
+même si le scheduler Airflow le permettrait autrement. Justifié par la
+pression mémoire déjà rencontrée sur `composites_mensuels` (`§3.3`) et la
+contention CPU déjà rencontrée en faisant tourner deux instances de
+`run_ml.py` en parallèle.
+
+**Déclenchement scindé, pas un seul planning pour tout le DAG** - décision
+qui a nécessité de vérifier un point technique avant de trancher (cf.
+ci-dessous, disponibilité RPG vs Sentinel-2) :
+- `@monthly` pour la chaîne d'acquisition/traitement Sentinel-2
+  (`ingestion_rpg` → `qc_couverture_temporelle`/`composites_mensuels`) —
+  ne dépend que de l'imagerie, disponible en continu.
+- **Manuel/annuel** pour `entrainement_ml` et `divergence_phenologie` —
+  ces deux étapes dépendent du millésime RPG de la campagne, qui n'est
+  publié qu'une fois par an, avec un délai d'environ un an après la fin
+  de la campagne observée (vérifié : le RPG millésime N est "arrêté au
+  1er janvier de l'année N+1", et sa publication effective traîne souvent
+  encore plus - RPG millésime 2024 annoncé disponible en novembre 2025).
+  Les scènes Sentinel-2, à l'inverse, sont disponibles quasi immédiatement
+  après acquisition (heures, pas mois) - la confusion initiale entre les
+  deux disponibilités a été clarifiée en vérifiant la documentation IGN/ASP
+  et Copernicus plutôt que de trancher sur la seule mémoire du projet.
+
+**Marqueur de version - conception affinée, pas une seule constante
+globale.** Une première idée (`PIPELINE_VERSION` unique) a été écartée en
+discussion : elle invaliderait à tort tous les composites déjà calculés
+au moindre changement touchant une partie totalement indépendante du
+pipeline (ex. un hyperparamètre ML dans `train.py`). Remplacée par des
+constantes **scindées par étage**, chacune bumpée manuellement uniquement
+quand le code produisant cet artefact précis change :
+```python
+SCL_VERSION = "1.0"          # bump uniquement si scl.py (f_valid_aoi) change
+BANDS_VERSION = "1.0"        # bump uniquement si resample_to_20m/compute_indices changent
+COMPOSITES_VERSION = "1.0"   # bump uniquement si compute_monthly_composite change
+```
+`§4` (ML) n'a pas besoin de ce mécanisme : `predict.py` génère déjà un
+`model_version` horodaté à chaque run, et l'upsert dans
+`derived.parcelles_classification` ne garde qu'une ligne par parcelle —
+rejouer l'entraînement produit naturellement une nouvelle version sans
+vérification de fraîcheur à faire.
+
+**Écriture atomique - répond aussi à la question des exécutions
+partielles.** Un marqueur de version seul ne suffit pas : si le tag est
+écrit *après* les données de pixels (`dst.update_tags(...)` après
+`dst.write(...)`), un crash pendant l'écriture pourrait laisser un
+fichier avec des pixels corrompus mais un tag de version présent.
+Corrigé par écriture dans un fichier temporaire puis renommage atomique :
+```python
+tmp_path = out_path.with_suffix(".tmp.tif")
+with rasterio.open(tmp_path, "w", ...) as dst:
+    dst.write(composite, 1)
+    dst.update_tags(pipeline_version=COMPOSITES_VERSION)
+os.replace(tmp_path, out_path)  # atomique sur NTFS comme sur POSIX
+```
+`out_path` n'existe jamais sous son nom final tant que l'écriture n'est
+pas intégralement terminée - un `Ctrl+C`/crash en cours d'écriture laisse
+un `.tmp.tif` orphelin (à nettoyer), jamais un fichier final corrompu.
+Les deux mécanismes (version + écriture atomique) se combinent
+naturellement, pas besoin de gérer un troisième cas séparé.
+
+**Détection de republication d'une scène - sans re-scanner tout
+l'historique.** Vérifié dans la documentation OData Copernicus : chaque
+produit porte un champ `PublicationDate` (distinct de `ContentDate/Start`,
+la date d'acquisition), filtrable et triable directement dans la requête.
+Permet une vérification incrémentale : garder en mémoire la date du
+dernier contrôle catalogue, interroger `PublicationDate gt {dernier_check}`
+à chaque déclenchement mensuel - ne remonte que les produits nouvellement
+publiés ou republiés (reprocessing baseline) depuis la dernière
+vérification, indépendamment de leur date d'acquisition réelle (donc
+capable de détecter la republication d'une scène ancienne, pas seulement
+récente). Coût négligeable (requête métadonnées seule) ; la déduplication
+déjà en place (`dedupliquer_catalogue`, garde la baseline la plus
+récente) absorbe le résultat sans changement.
+
+**Persistance de "dernier contrôle catalogue" - Airflow Variable, pas
+`SCL_VERSION`.** Question tranchée explicitement : ce ne sont pas la même
+nature de donnée. `SCL_VERSION` est une chaîne versionnée dans le code
+source, modifiée manuellement et rarement (quand la logique change). La
+date de dernier contrôle est un état d'exécution, modifié automatiquement
+à chaque run planifié - la stocker dans `config.py` obligerait à commiter
+un changement de code à chaque déclenchement mensuel, ce qui casse
+l'automatisation. Persistée dans une **Airflow Variable** (magasin
+clé-valeur intégré, pensé pour exactement ce cas), pas une table PostGIS
+ni un fichier à inventer.
+
+**Cascade de republication - gap identifié, correctif à ajouter avant le
+DAG.** Une scène republiée (nouvelle baseline) doit déclencher le
+retraitement de la scène elle-même, mais aussi du composite mensuel qui
+en dépend - et `composites.py` ne vérifie actuellement que l'existence du
+fichier de sortie, jamais sa fraîcheur par rapport à ses sources
+(contrairement à `qc.py::calculer_couverture_temporelle`, qui a déjà ce
+contrôle via `_completude_a_jour`). **Correctif nécessaire** : étendre à
+`composites.py` le même contrôle de fraîcheur (comparaison de version/date
+entre le composite et les indices sources dont il dépend) avant de
+considérer le DAG complet. Risque résiduel jugé maîtrisé pour `§4`/`§5` :
+comme ces deux étapes ne se déclenchent qu'une fois par an (pas sur le
+cadencement mensuel), elles héritent naturellement de l'état à jour du
+traitement S2 au moment de leur déclenchement - tant que le contrôle
+`PublicationDate` mensuel a bien rattrapé toute republication avant le
+déclenchement annuel, la cohérence est garantie sans logique de cascade
+explicite supplémentaire à ce niveau.

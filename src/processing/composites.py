@@ -9,12 +9,27 @@ la grille AOI et la liste des mois complets (`§3.2 ter` / `qc.py`) :
 La médiane est robuste aux nuages résiduels non détectés par la SCL et aux
 outliers radiométriques ponctuels. Un pixel sans aucune acquisition valide
 dans le mois reçoit la valeur nodata (`-9999`).
+
+**Marqueur de version + écriture atomique** (cf. `methode.md`, conception
+du DAG) : chaque composite embarque `COMPOSITES_VERSION` en tag GeoTIFF,
+et sa fraîcheur est vérifiée par rapport à ses fichiers sources (pas
+seulement son existence) — nécessaire pour qu'une scène republiée par
+Copernicus (nouvelle baseline) invalide correctement le composite mensuel
+qui en dépend, pas seulement la bande/l'indice individuel. `COMPOSITES_VERSION`
+est une constante distincte de `SCL_VERSION`/`BANDS_VERSION` (versions par
+étage, pas une seule version globale — une bump ici n'invalide jamais les
+sorties d'un autre module). L'écriture passe par un fichier temporaire
+puis un renommage atomique : `out_path` n'existe jamais sous son nom final
+tant que l'écriture n'est pas intégralement terminée, un crash en cours
+d'écriture laisse un `.tmp.tif` orphelin plutôt qu'un fichier corrompu
+mais avec un tag de version qui semblerait à jour.
 """
 
 from __future__ import annotations
 
 import gc
 import logging
+import os
 import time
 import warnings
 from pathlib import Path
@@ -40,6 +55,45 @@ VARIABLES = [
     "NDWI",
     "NDRE",
 ]
+COMPOSITES_VERSION = (
+    "1.0"  # bump uniquement si compute_monthly_composite change (logique de calcul)
+)
+
+
+def _composite_a_jour(
+    out_path: Path,
+    scene_ids_par_date: dict,
+    src_dir: Path,
+    variable: str,
+    composites_version: str,
+) -> bool:
+    """Un composite est à jour s'il existe, porte le tag de version courant,
+    ET est plus récent que tous ses fichiers sources (bandes/indices).
+
+    Les deux conditions sont nécessaires et complémentaires : le tag de
+    version détecte un changement de *code* (`compute_monthly_composite`
+    modifié) ; la comparaison de date détecte un changement de *données*
+    à code inchangé (ex. une scène republiée par Copernicus avec une
+    nouvelle baseline, dont l'indice source a été retraité).
+    """
+    if not out_path.exists():
+        return False
+    try:
+        with rasterio.open(out_path) as dst:
+            tag_version = dst.tags().get("composites_version")
+    except Exception:
+        return False  # fichier illisible/corrompu — pas à jour, sera régénéré
+    if tag_version != composites_version:
+        return False
+
+    mtime_out = out_path.stat().st_mtime
+    for scene_ids in scene_ids_par_date.values():
+        for scene_id in scene_ids:
+            tile_id = scene_id.split("_")[5][1:]
+            src_path = src_dir / tile_id / f"{scene_id}_{variable}.tif"
+            if src_path.exists() and src_path.stat().st_mtime > mtime_out:
+                return False
+    return True
 
 
 def compute_monthly_composite(
@@ -50,19 +104,23 @@ def compute_monthly_composite(
     bands_dir: Path,
     indices_dir: Path,
     composites_dir: Path,
+    composites_version: str = COMPOSITES_VERSION,
 ) -> tuple[str, str, str]:
     """Calcule le composite mensuel AOI pour un mois × variable (portage §3.3, cellule 24).
 
     `scene_ids_par_date` : `{date_str: [scene_id, ...]}` pour ce mois.
-    Retourne `(mois, variable, "OK"|"SKIP"|"VIDE"|"ERR <msg>")` — idempotent
-    (`SKIP` si le composite existe déjà).
+    Retourne `(mois, variable, "OK"|"SKIP"|"VIDE"|"ERR <msg>")` — idempotent,
+    mais `SKIP` seulement si le composite est réellement à jour (`_composite_a_jour`),
+    pas seulement présent (cf. docstring de module).
     """
     out_dir = composites_dir / mois
     out_path = out_dir / f"{variable}.tif"
-    if out_path.exists():
-        return (mois, variable, "SKIP")
-
     src_dir = indices_dir if variable in ("NDVI", "EVI", "NDWI", "NDRE") else bands_dir
+
+    if _composite_a_jour(
+        out_path, scene_ids_par_date, src_dir, variable, composites_version
+    ):
+        return (mois, variable, "SKIP")
 
     # Chronométrage par étape — pour distinguer I/O disque (reprojection, lecture des
     # fichiers sources) de calcul CPU pur (médianes), diagnostic ajouté suite à un
@@ -129,9 +187,10 @@ def compute_monthly_composite(
         gc.collect()
 
         out_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = out_path.with_suffix(".tmp.tif")
         t0 = time.perf_counter()
         with rasterio.open(
-            out_path,
+            tmp_path,
             "w",
             driver="GTiff",
             height=grille["height"],
@@ -147,6 +206,10 @@ def compute_monthly_composite(
             blockysize=256,
         ) as dst:
             dst.write(composite, 1)
+            dst.update_tags(composites_version=composites_version)
+        os.replace(
+            tmp_path, out_path
+        )  # atomique — out_path n'existe jamais à moitié écrit
         t_write = time.perf_counter() - t0
 
         logger.info(
@@ -178,6 +241,7 @@ def construire_composites_mensuels(
     indices_dir: Path,
     composites_dir: Path,
     variables: list[str] = VARIABLES,
+    composites_version: str = COMPOSITES_VERSION,
 ) -> dict:
     """Boucle principale mois × variable (portage §3.3, cellule 25).
 
@@ -208,6 +272,7 @@ def construire_composites_mensuels(
                 bands_dir,
                 indices_dir,
                 composites_dir,
+                composites_version=composites_version,
             )
             if status == "OK":
                 n_ok += 1
