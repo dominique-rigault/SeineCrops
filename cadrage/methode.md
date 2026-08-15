@@ -237,6 +237,57 @@ En excluant `autres` (fourre-tout hétérogène, pas une "grande culture" au sen
 
 **Tuning `RandomizedSearchCV` - testé, écarté.** 20 itérations, `cv=3`, `scoring="f1_macro"` sur `n_estimators`, `max_depth`, `min_samples_leaf`, `max_features`. Meilleurs paramètres retenus par la recherche : `{n_estimators: 200, min_samples_leaf: 2, max_features: 0.2, max_depth: 30}`, F1 macro CV 0,884. Appliqués au test spatial : F1 macro 0,894 (quasi identique au baseline, +0,001), mais écart train/test passé de 0,060 à **0,107** - le surapprentissage s'est aggravé pour un gain nul. **Cause identifiée** : `RandomizedSearchCV(cv=3)` effectue un k-fold classique sur `X_train`, aveugle à l'information de bloc spatial (perdue au `.values` de la cellule de préparation des matrices). La CV interne autorise donc des parcelles spatialement voisines entre apprentissage et validation, ce qui favorise artificiellement les hyperparamètres les plus permissifs à la mémorisation locale (ici `min_samples_leaf=2`) - un score CV optimiste qui ne se vérifie pas sur le vrai test, spatialement disjoint. **Enseignement pour toute reprise future du tuning** : remplacer `cv=3` par un `GroupKFold` (ou équivalent) utilisant l'identifiant de bloc spatial comme groupe, pour que la CV interne respecte la même contrainte que le split externe. Non implémenté à ce stade - le gain visé (marginal, +0,001 sur la CV standard) ne justifiait pas l'effort de correction avant de trancher.
 
+**Confirmé à nouveau sur le code migré (`src/ml/`)**, avec des chiffres
+cohérents : baseline train `0,9411` / test `0,8800`, tuné train `0,9927`
+/ test `0,8825` - écart train/test passé de `~6` à `~11` points pour un
+gain de test quasi nul (`+0,0025`, F1 macro CV du tuning `0,8852`, F1
+macro test réel `0,890` vs `0,887` baseline). Même diagnostic que
+l'exécution notebook d'origine, même cause (`cv=3` aveugle au split
+spatial), même conclusion. **Conséquence pratique à corriger** : ce run
+a upserté le modèle tuné dans `derived.parcelles_classification`
+(`rf_tuned_20260815`), écrasant les prédictions baseline précédentes —
+à revenir au baseline (`python -m scripts.run_ml --skip-search`) tant
+que le tuning n'est pas corrigé, plutôt que de garder en base un modèle
+qui surapprend davantage sans gain mesurable.
+
+**Solution décrite mais non implémentée - `StratifiedGroupKFold` plutôt
+que `GroupKFold` simple.** Trois changements contenus, pas une refonte :
+1. `split.py::joindre_split` doit transmettre `block_id` jusqu'à
+   `train.py`, pas seulement la colonne `split` (train/test) - actuellement
+   perdu après le passage aux matrices numpy (`.values`).
+2. `train.construire_matrices` doit aussi extraire `groups_train` (le
+   `block_id` de chaque ligne de `X_train`, même ordre que `X_train`/`y_train`).
+3. `rechercher_hyperparametres` : remplacer `cv=3` (entier) par un objet
+   `StratifiedGroupKFold(n_splits=3)`, et passer `groups=groups_train` à
+   `search.fit(...)`.
+
+**Pourquoi `StratifiedGroupKFold` plutôt que `GroupKFold`** : l'AOI ne
+compte que `75` blocs spatiaux au total (`~60` en train) - répartis sur
+`3` plis, ça ne fait qu'environ `20` blocs par pli. Sur des classes déjà
+déséquilibrées (`betterave` : `3403` parcelles, `legumes_fleurs` :
+`3066`, contre `24857` pour `prairie`), rien ne garantit qu'un
+sous-ensemble de `~20` blocs représente bien les `8` classes - un pli
+pourrait se retrouver sans aucune parcelle d'une classe minoritaire en
+entraînement, faussant son score sans rapport avec la qualité réelle des
+hyperparamètres testés. `StratifiedGroupKFold` (scikit-learn) tente de
+concilier les deux contraintes (respect des groupes + équilibre des
+classes entre plis), contrairement à `GroupKFold` simple.
+
+**Piste écartée : guider la recherche via `oob_score` plutôt que `cv`.**
+N'aurait pas réglé le problème de fond - le bootstrap OOB de scikit-learn
+tire aléatoirement sur l'ensemble du pool de train, sans notion de bloc
+spatial, exactement le même défaut que `cv=3` classique. Seul avantage
+réel de l'OOB : gratuit (pas de réentraînement multiple), mais scikit-learn
+n'a pas d'option native pour scorer `RandomizedSearchCV` avec l'OOB, et
+son bootstrap interne n'a pas de paramètre de groupe - corriger l'OOB pour
+le rendre spatialement valide serait un chantier plus lourd
+(implémentation de bagging personnalisée) que d'ajouter `StratifiedGroupKFold`.
+
+**Coût inchangé** : toujours `60` fits (`20` itérations × `3` plis), donc
+un temps d'exécution du même ordre que le run déjà effectué (~7-8h) —
+la correction améliore la fiabilité du signal de sélection, pas la
+vitesse.
+
 **Features temporelles dérivées - testées, écartées.** Test ciblé (3 features, à partir de `s2_parcelles_ndvi_dates`, 3.6, filtrée sur `n_pixels >= 5`) : `amplitude_ndvi` (max − min saison), `jour_max_ndvi` (position temporelle du maximum), `pente_ndvi_mai_aout` (dérivée des composites mensuels déjà en base, sans dépendance à 3.6). Couverture 69 534 / 77 932 parcelles (89,2 % - écart expliqué par les 2 751 parcelles sans pixel 20 m connues de S2.4 et le filtre `n_pixels`, NaN laissé tel quel pour le reste plutôt qu'imputé). Résultat : **F1 macro inchangé (0,893)**. La confusion `autres`/`prairie` s'est redistribuée sans se réduire (total quasi stable, ~1090 parcelles dans les deux runs) : recall `autres` en hausse mais precision stable, signe que les nouvelles features changent le sens des erreurs sans réduire le chevauchement de signal entre les deux classes. `pente_ndvi_mai_aout` s'est classée 5ᵉ/707 en importance malgré un gain nul - cohérent avec une feature qui condense une information déjà accessible au modèle en deux splits (`NDVI_mean_2024-08` − `NDVI_mean_2024-05`), donc un gain de commodité structurelle pour l'arbre plutôt qu'un signal réellement nouveau. **Hypothèse retenue** : la confusion `autres`/`prairie` est plus probablement un problème de label RPG (la classe `autres` mélange des usages du sol à dynamiques hétérogènes) qu'un manque de feature - piste distincte, non investiguée à ce stade, différée.
 
 **Décision finale** : modèle retenu pour la persistance (4.4) = **baseline par défaut** (`rf_base`, sans tuning, sans features temporelles dérivées), par souci de simplicité et de robustesse - le gain potentiel des deux pistes testées (tuning, features temporelles) s'est révélé nul à marginal, l'une au prix d'un surapprentissage aggravé.
