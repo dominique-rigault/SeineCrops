@@ -1070,6 +1070,64 @@ qui reste la cause principale de la lenteur.
   du DAG : la parallélisation naturelle par tâche ne s'applique pas sans
   repenser la mémoire d'abord.
 
+**Performance de `§3.3` (composites mensuels) - cause réelle identifiée en
+environnement Airflow, corrigée** : la « cause retenue » ci-dessus
+(pression mémoire/swap) s'est révélée incomplète. Sur le premier run réel
+du DAG A (Airflow, WSL2), un `SIGKILL` (OOM) a d'abord confirmé une
+composante mémoire authentique - corrigée en augmentant la mémoire
+allouée à WSL2 via `.wslconfig` (`memory=12GB`). Une fois l'OOM éliminé,
+la lenteur a persisté à l'identique (`médiane journ.` toujours ~350-400s
+par variable) - la mémoire n'était donc qu'une partie du problème, pas la
+cause dominante.
+
+Deux hypothèses intermédiaires testées et infirmées avant la bonne :
+1. Distinction 2 vs 3+ tuiles (`nanmean` pour le cas à 2, en supposant ce
+   cas majoritaire d'après la distribution spatiale des pixels AOI
+   - 80 % couverts par 2 tuiles). **Sans effet mesuré** : cette
+   distribution est une propriété par pixel, pas par date - la moyenne de
+   fichiers reprojetés par date (50 fichiers / 14 dates en septembre 2023,
+   soit ~3,6) montre que la majorité des *dates* ont 3-4 scènes
+   disponibles (plusieurs tuiles acquises le même jour de passage), pas 2;
+   la branche optimisée était donc rarement empruntée.
+2. Reprojection paresseuse dans `reproject_to_aoi` (`grid.py`) - infirmée
+   à la lecture du code : `rasterio.warp.reproject` écrit dans `dst` de
+   façon immédiate, non différée.
+
+**Cause confirmée par benchmark isolé** (données synthétiques, taille
+grille réelle 4824×5448, hors environnement Airflow, donc sans
+composante mémoire/swap possible) : `np.nanmedian` mesuré 7 à 15× plus
+lent que `np.nanmean` sur cette taille de tableau, à profondeur 2, 3 et 4
+identique. La lenteur vient de l'algorithme `nanmedian` de numpy lui-même
+(tri interne par pixel), pas de la pression mémoire ni de la profondeur du
+stack - la piste mémoire/swap documentée plus haut n'explique donc
+qu'une partie du ralentissement observé à l'époque du notebook, la
+composante algorithmique étant restée invisible tant que l'environnement
+était aussi contraint en mémoire.
+
+**Correctif appliqué** : remplacement de `np.nanmedian` par
+`bottleneck.nanmedian` (mesuré 7 à 13× plus rapide selon la profondeur,
+via le même benchmark), avec repli explicite sur `np.nanmedian` si la
+librairie est absente (`try/except ImportError`, loggué en `WARNING` pour
+ne pas masquer silencieusement une régression de perf). Un seul chemin de
+code désormais (plus de distinction par profondeur) : `bottleneck`
+s'est révélé plus rapide que `np.nanmean` lui-même aux profondeurs 2 et
+3, rendant la distinction de la piste 1 obsolète. Appliqué aux deux
+étapes de réduction (médiane journalière et médiane mensuelle).
+
+**Point de déploiement à ne pas manquer** : `composites.py` s'exécute
+dans le conteneur Airflow, dont les dépendances viennent de
+`requirements-airflow.txt`, pas `requirements.txt` - les deux ont été mis
+à jour. De plus, `docker compose build` reconstruit les images mais ne
+recrée pas les conteneurs en cours d'exécution; `docker compose up -d`
+est nécessaire après le build pour que la nouvelle image soit
+effectivement utilisée (piège rencontré : premier run post-build encore
+sur l'ancienne image, `bottleneck` absent, détecté grâce au `WARNING`
+explicite du repli).
+
+**Gain mesuré sur run réel** (Airflow, `bottleneck` effectivement chargé) :
+médiane journalière passée de 350-400 s à 6-11 s par variable, soit un
+facteur ~35-60×, cohérent avec (et supérieur à) le benchmark synthétique.
+
 **Censure de gauche du SOS pour le colza (limite structurelle de la fenêtre d'observation)** : la fenêtre d'observation (Sept N → Déc N+1) démarre après le semis du colza (fin août N) - le creux NDVI pré-semis n'est donc jamais observable, quelle que soit la borne basse choisie pour la fenêtre de recherche phénologique (nb05, 5.3). 25,9 % des parcelles colza ont un SOS détecté collé au bord gauche de la fenêtre (`sos_en_bord`), contre 0,6-5,5 % pour les autres cultures de printemps/été après calibrage de `FENETRES_PHENOLOGIE`. **Non corrigible par ajustement de fenêtre** : le bord des données précède déjà le bord de la fenêtre de recherche. Ces parcelles sont exclues des statistiques agrégées via le flag `fiable`, plutôt que de biaiser le SOS médian de la classe vers une valeur artificiellement précoce.
 
 **Multimodalité intra-fenêtre non filtrée par pos_en_bord (limite méthodologique de 5.3)** : une minorité de parcelles (~7 % des `cereales_hiver` divergentes contre 1 % des conformes, test χ² p<0,0001) présentent un profil NDVI lissé franchement multimodal à l'intérieur même de la fenêtre calendaire autorisée (`FENETRES_PHENOLOGIE`) - l'extraction SOS/POS/EOS par seuil d'amplitude autour du maximum global détecte alors un pic secondaire plutôt que la vraie saison, produisant un LOS anormalement court. Investigué : ni un seuil physique universel (0,23 % de points NDVI < 0,05 dans tout le jeu, insuffisant pour expliquer tous les cas), ni un défaut de scène à une date donnée (NDVI médian et couverture en pixels cohérents avec les dates voisines sur les cas testés - écarté par comparaison au jour 248/2024-05-07, date de forte couverture avec 68 879 parcelles observées), ni entièrement capturé par un lissage robuste itératif (filtrage par résidu, corrige 3 cas sur 5 testés visuellement). Cause probable : creux réels mais brefs (destruction d'interculture, accident cultural) sur des parcelles où le pic secondaire résultant dépasse le pic saisonnier principal. **Non corrigé** - impact limité et concentré sur `cereales_hiver` (le taux de LOS extrême reste sous 2 % pour `mais`/`betterave`) ; solution complète (détection de multimodalité + choix du "bon" pic, ou lissage robuste généralisé) laissée pour une itération future si le besoin se confirme.
@@ -1321,3 +1379,31 @@ run. Particulièrement pertinent une fois le DAG en déclenchement
 automatisé (planifié, sans supervision) - un run mensuel sans
 intervention manuelle ne doit pas dépendre d'un rattrapage `tasks clear`
 fait à la main.
+
+#### DAG A validé de bout en bout (`seinecrops_acquisition_s2`)
+
+Après la série de correctifs ci-dessus (rafraîchissement token par-bande,
+détection de contenu vide/`_jp2_valide`, SKIP élargi à l'ensemble
+bandes+indices, mémoire WSL2, `bottleneck.nanmedian`), premier run
+complet du DAG A entièrement `success` sur toutes les tâches :
+`disponibilite_s2` → `scl_f_valid_aoi` → `traitement_bandes_indices` →
+(`qc_fichiers` + `qc_couverture_temporelle`) → `composites_mensuels` →
+`nettoyage_intermediaires`.
+
+**Ce que ce run valide** : l'orchestration Airflow elle-même
+(dépendances entre tâches, idempotence via SKIP à la reprise après
+échec, isolation mémoire par tâche), pas seulement la logique métier
+déjà validée en notebook. Chaque bug trouvé dans cette session
+(token, contenu vide, performance) n'existait pas - ou n'était pas
+visible - dans les exécutions notebook antérieures, plus courtes et
+sur des sous-ensembles de données : révélateur de l'écart réel entre
+« la logique fonctionne » et « la chaîne tourne sans supervision sur
+le volume complet ».
+
+**Reste hors DAG A, prochaine étape (DAG B)** : `stats_zonales`,
+`qc_stats_zonales`, `classification`, `divergence_pheno` - code déjà
+migré vers `src/ml/orchestration.py` et
+`src/phenology/orchestration.py`, mais pas encore orchestré ni testé
+en conditions réelles Airflow. À traiter avec la même vigilance
+(surveiller mémoire/perf/edge cases dès le premier run réel plutôt que
+supposer la migration `src/` équivalente au notebook).
