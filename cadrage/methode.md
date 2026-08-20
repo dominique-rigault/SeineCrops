@@ -844,7 +844,7 @@ Deux options actées :
   changement de code touchant le calcul raster.
 
 **Granularité du rafraîchissement de token CDSE - amélioration identifiée,
-non corrigée** : `traiter_bandes_indices` rafraîchit le token une fois par
+corrigée** : `traiter_bandes_indices` rafraîchit le token une fois par
 scène, pas avant chaque bande individuelle (7 appels réseau séquentiels
 par scène) - a provoqué 3 échecs par expiration en cours de scène sur 552
 (`401 Unauthorized`, toutes sur la tuile `31UCQ`, cause de cette
@@ -852,8 +852,7 @@ concentration non déterminée). Sans conséquence pratique : `qc.
 verifier_completude_fichiers` les détecte (`MANQUANT` complet, aucun
 fichier partiel créé grâce à l'ordre des opérations dans
 `process_scene_bands`), et l'idempotence les rattrape automatiquement au
-passage suivant. Amélioration à envisager avant le DAG plutôt qu'urgente
-maintenant.
+passage suivant.
 
 #### Tests - deux échelles, à ne pas confondre
 
