@@ -67,6 +67,33 @@ BANDES = [
 INDICES_NOMS = ["NDVI", "EVI", "NDWI", "NDRE"]
 
 
+def _jp2_valide(path: Path, seuil_pct_zero: float = 99.0) -> bool:
+    """Vérifie qu'un .jp2 est lisible, non tronqué, ET pas un flux vide/défaillant.
+
+    Deux modes de défaillance distincts observés en run réel (cf.
+    `methode.md` §S6) :
+    1. Téléchargement tronqué en cours de flux — l'ouverture rasterio
+       échoue (fichier structurellement invalide).
+    2. Téléchargement "réussi" (200 OK, flux complet) mais contenu
+       entièrement à 0 sur la tuile entière — CDSE a répondu avec un
+       contenu vide sans erreur HTTP. Cas rencontré sur B02 d'une scène
+       31UCQ : bande 10980×10980 à 100 % zéro, alors que B04 (même
+       résolution, même scène) était valide — deux bandes 10 m issues du
+       même flux d'acquisition ne peuvent pas légitimement diverger à ce
+       point ; un vrai bord de fauchée toucherait les deux bandes 10 m de
+       façon comparable. `seuil_pct_zero` à 99 % plutôt que 100 % pour
+       tolérer un éventuel bord de tuile réellement hors fauchée sans
+       flag positif à tort.
+    """
+    try:
+        with rasterio.open(path) as src:
+            arr = src.read(1)
+    except Exception:
+        return False
+    pct_zero = 100 * float(np.mean(arr == 0))
+    return pct_zero < seuil_pct_zero
+
+
 def download_band(
     product_id: str,
     scene_id: str,
@@ -79,14 +106,28 @@ def download_band(
     token: dict,
     bands_dir: Path,
 ) -> Path | None:
-    """Télécharge une bande jp2 dans `bands_dir/<tile_id>/`. Idempotent (skip si déjà présente)."""
+    """Télécharge une bande jp2 dans `bands_dir/<tile_id>/`. Idempotent (skip si déjà présente et valide).
+
+    Un fichier existant mais corrompu (téléchargement tronqué, cf.
+    `_jp2_valide`) est supprimé et retéléchargé plutôt que skippé — sans
+    cette vérification, l'idempotence pérenniserait silencieusement la
+    corruption au lieu de simplement éviter un travail redondant.
+    """
     out_dir = bands_dir / tile_id
     out_dir.mkdir(parents=True, exist_ok=True)
     fname = f"T{tile_id}_{date_str}_{band}_{res_suffix}.jp2"
     out_path = out_dir / fname
 
     if out_path.exists():
-        return out_path
+        if _jp2_valide(out_path):
+            return out_path
+        logger.warning(
+            "download_band(%s, %s) : fichier existant invalide (tronqué ou "
+            "vide), suppression et retéléchargement.",
+            scene_id,
+            band,
+        )
+        out_path.unlink()
 
     url = (
         f"{ODATA_BASE_DL}/Products({product_id})/Nodes({scene_id}.SAFE)"
@@ -104,9 +145,20 @@ def download_band(
         with open(out_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=1024 * 256):
                 f.write(chunk)
+        if not _jp2_valide(out_path):
+            logger.warning(
+                "download_band(%s, %s) : fichier téléchargé invalide "
+                "(tronqué ou vide), suppression.",
+                scene_id,
+                band,
+            )
+            out_path.unlink()
+            return None
         return out_path
     except Exception as e:
         logger.warning("download_band(%s, %s) : %s", scene_id, band, e)
+        if out_path.exists():
+            out_path.unlink()
         return None
 
 
@@ -223,8 +275,17 @@ def process_scene_bands(
     date_str = scene_id.split("_")[2]
 
     idx_dir = indices_dir / tile_id
-    ndvi_path = idx_dir / f"{scene_id}_NDVI.tif"
-    if ndvi_path.exists():
+    band_out_dir = bands_dir / tile_id
+    fichiers_attendus = [band_out_dir / f"{scene_id}_{b}.tif" for b, _, _ in BANDES] + [
+        idx_dir / f"{scene_id}_{i}.tif" for i in INDICES_NOMS
+    ]
+    if all(p.exists() for p in fichiers_attendus):
+        # SKIP sur complétude de TOUS les fichiers attendus, pas seulement
+        # NDVI — un test partiel (ex. NDVI seul) peut passer alors qu'une
+        # autre bande est manquante/invalide (ex. B02/EVI, qui ne
+        # partagent aucune dépendance avec NDVI), gelant silencieusement
+        # le problème pour les runs suivants (cf. `methode.md` §S6, cas
+        # rencontré sur une scène 31UCQ).
         return (scene_id, "SKIP", token)
 
     granule_id = get_granule_id(product_id, scene_id, token)

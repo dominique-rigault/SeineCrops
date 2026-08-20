@@ -843,16 +843,63 @@ Deux options actées :
   qui ne pourra plus compter sur une vérification humaine après chaque
   changement de code touchant le calcul raster.
 
-**Granularité du rafraîchissement de token CDSE - amélioration identifiée,
-corrigée** : `traiter_bandes_indices` rafraîchit le token une fois par
-scène, pas avant chaque bande individuelle (7 appels réseau séquentiels
-par scène) - a provoqué 3 échecs par expiration en cours de scène sur 552
+**Granularité du rafraîchissement de token CDSE - corrigée** :
+`traiter_bandes_indices` rafraîchissait le token une fois par scène, pas
+avant chaque bande individuelle (7 appels réseau séquentiels par scène) -
+avait provoqué 3 échecs par expiration en cours de scène sur 552
 (`401 Unauthorized`, toutes sur la tuile `31UCQ`, cause de cette
-concentration non déterminée). Sans conséquence pratique : `qc.
-verifier_completude_fichiers` les détecte (`MANQUANT` complet, aucun
-fichier partiel créé grâce à l'ordre des opérations dans
-`process_scene_bands`), et l'idempotence les rattrape automatiquement au
-passage suivant.
+concentration non déterminée). Sans conséquence pratique observée :
+`qc.verifier_completude_fichiers` les détectait (`MANQUANT` complet,
+aucun fichier partiel créé grâce à l'ordre des opérations dans
+`process_scene_bands`), et l'idempotence les rattrapait automatiquement
+au passage suivant.
+
+**Correctif appliqué** : le rafraîchissement du token est déplacé de la
+boucle par-scène de `traiter_bandes_indices` vers la boucle par-bande de
+`process_scene_bands` (avant chaque `download_band`, pas seulement une
+fois en tête de scène). `process_scene_bands` retourne désormais le
+token éventuellement renouvelé en plus de `(scene_id, statut)`
+(`refresh_cdse_token` ne mute pas en place) ; `traiter_bandes_indices` le
+réassigne à chaque itération, en plus du rafraîchissement déjà existant
+en tête de boucle.
+
+**Téléchargement de bande "réussi" mais contenu entièrement vide - bug
+trouvé lors du QC post-run** : `qc_fichiers` a classé une scène (31UCQ)
+en `VIDE` sur la bande B02 et l'indice EVI (seul indice dépendant de
+B02). Diagnostic : le `.jp2` B02 source, la tuile entière (10980×10980,
+avant tout recadrage AOI), était à 100 % pixels à 0, alors que B04 (même
+résolution 10 m, même scène) était valide - deux bandes 10 m issues du
+même flux d'acquisition ne peuvent pas légitimement diverger à ce point ;
+un vrai bord de fauchée toucherait les deux bandes 10 m de façon
+comparable. Cause retenue : réponse CDSE "réussie" (200 OK, flux
+complet) mais contenu vide, sans erreur HTTP détectable dans
+`download_band`.
+
+**Correctif appliqué** : `_jp2_valide` (`src/processing/bands.py`)
+vérifie désormais, en plus de l'ouverture/lecture rasterio, que le
+pourcentage de pixels à 0 reste sous un seuil (99 %). Appliquée à la fois
+sur un fichier déjà présent (avant de le considérer comme complet) et sur
+un fichier tout juste téléchargé (avant de le retourner comme valide) -
+un fichier invalide est supprimé puis retéléchargé plutôt que
+silencieusement accepté.
+
+**Limite connue** : ce correctif protège les téléchargements futurs, mais
+ne rattrape pas rétroactivement un fichier déjà présent sur disque avec
+un contenu corrompu écrit avant son application - un nettoyage manuel
+ciblé reste nécessaire pour les fichiers déjà affectés (cas de la scène
+31UCQ ci-dessus, supprimée manuellement avant relance).
+
+**Test de SKIP par scène élargi à l'ensemble bandes+indices** :
+`process_scene_bands` ne testait que l'existence de `NDVI.tif` pour
+décider de skipper une scène entière. Or NDVI ne dépend que de B04/B08 :
+il peut exister et être valide alors qu'une autre bande (ex. B02, et
+l'indice EVI qui en dépend) est manquante ou invalide, gelant
+silencieusement le problème pour tous les runs suivants - cas rencontré
+sur la même scène 31UCQ que ci-dessus. Corrigé : le SKIP requiert
+désormais l'existence de toutes les bandes et de tous les indices
+attendus, pas seulement NDVI. Ce test reste volontairement limité à
+l'existence (pas la validité de contenu, rôle de
+`qc.verifier_completude_fichiers`) pour ne pas alourdir le coût du SKIP.
 
 #### Tests - deux échelles, à ne pas confondre
 
