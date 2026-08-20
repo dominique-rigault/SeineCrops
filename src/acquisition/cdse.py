@@ -85,7 +85,15 @@ def get_cdse_token() -> dict:
 
 
 def refresh_cdse_token(token_dict: dict) -> dict:
-    """Rafraîchit le token si expiré (marge 30 s), sinon le retourne tel quel."""
+    """Rafraîchit le token si expiré (marge 30 s), sinon le retourne tel quel.
+
+    Si le *refresh token* lui-même a expiré (cas observé après plusieurs
+    heures d'exécution sur `traitement_bandes_indices` — cf. `methode.md`
+    §S6, bug trouvé au premier run réel du DAG A), le rafraîchissement
+    échoue avec un `400`/`401` : on retombe alors sur une ré-authentification
+    complète (`get_cdse_token`) plutôt que de laisser l'exception remonter
+    et faire échouer toute la tâche après plusieurs heures de travail utile.
+    """
     if time.time() < token_dict["expires_at"]:
         return token_dict
     resp = requests.post(
@@ -97,6 +105,13 @@ def refresh_cdse_token(token_dict: dict) -> dict:
         },
         timeout=30,
     )
+    if resp.status_code in (400, 401):
+        logger.warning(
+            "refresh_cdse_token : rafraîchissement refusé (%d), "
+            "ré-authentification complète.",
+            resp.status_code,
+        )
+        return get_cdse_token()
     resp.raise_for_status()
     payload = resp.json()
     return {
