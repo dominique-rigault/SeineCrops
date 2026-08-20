@@ -1,0 +1,89 @@
+# SeineCrops, Airflow en local (option 2 actée : PostGIS "seinecrops" reste
+# sur l'hôte Windows, seule la base de métadonnées Airflow est conteneurisée).
+#
+# `.env` (racine du projet) fournit PG_PASSWORD, CDSE_USER, CDSE_PASSWORD.
+# `PG_HOST` y est probablement `localhost`, valable sur l'hôte Windows mais
+# pas depuis un conteneur (où `localhost` désigne le conteneur lui-même,
+# pas l'hôte), surchargé ci-dessous par `host.docker.internal`, le nom
+# DNS spécial fourni par Docker Desktop pour atteindre l'hôte. `environment:`
+# a priorité sur `env_file:` pour une même clé, donc cette surcharge
+# s'applique sans modifier le `.env` réel.
+#
+# `.projectroot` est monté seul (pas tout le dépôt) : `src/config.py`
+# retrouve la racine du projet via ce marqueur (ou `.git`), sans lui, tous
+# les chemins dérivés (`DATA_RAW_S2`, etc.) se tromperaient silencieusement
+# à l'intérieur du conteneur.
+
+name: seinecrops-airflow
+
+x-airflow-common: &airflow-common
+  build:
+    context: ./docker
+    dockerfile: Dockerfile
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__SECRET_KEY: "une-valeur-fixe-quelconque-en-local"
+    PYTHONPATH: /opt/airflow
+    PG_HOST: host.docker.internal
+  env_file:
+    - .env
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./data:/opt/airflow/data
+    - ./cadrage:/opt/airflow/cadrage
+    - ./.projectroot:/opt/airflow/.projectroot
+    - ./.env:/opt/airflow/.env
+    - ./logs:/opt/airflow/logs
+  depends_on:
+    postgres-airflow:
+      condition: service_healthy
+
+services:
+  postgres-airflow:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin --password admin \
+          --firstname Dominique --lastname Rigault \
+          --role Admin --email admin@example.com \
+          || true
+
+  airflow-webserver:
+    <<: *airflow-common
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    command: webserver
+
+  airflow-scheduler:
+    <<: *airflow-common
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    command: scheduler
+
+volumes:
+  airflow-db-data:
