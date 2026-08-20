@@ -38,6 +38,18 @@ import numpy as np
 import pandas as pd
 import rasterio
 
+try:
+    import bottleneck as bn
+
+    _nanmedian = bn.nanmedian
+except ImportError:  # pragma: no cover - repli si bottleneck absent de l'environnement
+    logging.getLogger(__name__).warning(
+        "bottleneck non installé — repli sur np.nanmedian (7-13x plus lent "
+        "sur la grille AOI, cf. requirements-airflow.txt). Reconstruire "
+        "l'image Docker si ce message apparaît en environnement Airflow."
+    )
+    _nanmedian = np.nanmedian
+
 from src.processing.grid import reproject_to_aoi
 
 logger = logging.getLogger(__name__)
@@ -156,13 +168,26 @@ def compute_monthly_composite(
                 if len(tuile_arrays) == 1:
                     daily_stack[n_dates_valides] = tuile_arrays[0]
                 else:
+                    # `bottleneck.nanmedian` plutôt que `np.nanmedian` — ce
+                    # dernier s'est révélé être le vrai poste de temps
+                    # dominant (~350-400s/variable sur 45-55s de
+                    # reprojection), pas la profondeur du stack (2 vs 3-4
+                    # tuiles) comme d'abord supposé à tort : la majorité des
+                    # dates ont 3-4 scènes disponibles (plusieurs tuiles
+                    # acquises le même jour de passage), pas 2, invalidant
+                    # un premier correctif ciblé sur le seul cas à 2 tuiles.
+                    # Gain mesuré sur run réel : 7-13x selon profondeur (2 à
+                    # 4), `bottleneck.nanmedian` même plus rapide que
+                    # `np.nanmean` aux profondeurs 2-3 — un seul chemin de
+                    # code, pas de distinction par profondeur (cf.
+                    # `methode.md` §S6).
                     # all-NaN attendu en bord d'AOI / entre tuiles sans recouvrement —
                     # résultat NaN correct, cf. qc.py pour le détail du correctif (np.errstate
                     # ne suffit pas, il faut warnings.simplefilter).
                     t0 = time.perf_counter()
                     with warnings.catch_warnings():
                         warnings.simplefilter("ignore", category=RuntimeWarning)
-                        daily_stack[n_dates_valides] = np.nanmedian(
+                        daily_stack[n_dates_valides] = _nanmedian(
                             np.stack(tuile_arrays, axis=0), axis=0
                         )
                     t_daily_median += time.perf_counter() - t0
@@ -178,7 +203,7 @@ def compute_monthly_composite(
         t0 = time.perf_counter()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
-            composite = np.nanmedian(daily_stack[:n_dates_valides], axis=0).astype(
+            composite = _nanmedian(daily_stack[:n_dates_valides], axis=0).astype(
                 np.float32
             )
         t_monthly_median = time.perf_counter() - t0
