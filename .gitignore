@@ -119,3 +119,6 @@ data/raw/s2/indices/
 
 # ── Diagnostics (S6, artefacts reproductibles, non versionnés) ────────────────
 data/diagnostics/
+
+# ── Logs (Airflow, exécution) ─────────────────────────────────────────────────
+logs/
