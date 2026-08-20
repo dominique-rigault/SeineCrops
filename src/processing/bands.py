@@ -196,18 +196,28 @@ def process_scene_bands(
     scl_dir: Path,
     bands_dir: Path,
     indices_dir: Path,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """Pour une scène retenue : téléchargement des 7 bandes, resampling 20 m,
     masquage SCL, calcul des 4 indices, sauvegarde GeoTIFF.
 
     `token` doit déjà être valide/rafraîchi par l'appelant (cf.
-    `traiter_bandes_indices`) — cette fonction ne l'obtient plus elle-même
-    (le notebook rappelait `get_cdse_token()` à chaque scène, ce qui
-    fonctionnait mais réauthentifiait inutilement sur un run de plusieurs
-    centaines de scènes ; corrigé lors de la migration).
+    `traiter_bandes_indices`) — cette fonction ne l'obtient jamais depuis
+    zéro elle-même (le notebook rappelait `get_cdse_token()` à chaque
+    scène, ce qui fonctionnait mais réauthentifiait inutilement sur un run
+    de plusieurs centaines de scènes ; corrigé lors de la migration).
+
+    En revanche, le token EST revérifié/rafraîchi ici avant chaque
+    téléchargement de bande (pas seulement une fois en tête de scène) —
+    correctif du run réel du DAG A (cf. `methode.md` §S6, "granularité du
+    rafraîchissement de token CDSE") : sur 552 scènes, 7 appels réseau
+    séquentiels par scène pouvaient traverser une expiration en cours de
+    scène, provoquant un `401 Unauthorized` isolé sur une bande sans que
+    rien ne le revérifie avant elle. Le token potentiellement renouvelé
+    est retourné à l'appelant, qui doit le réassigner (`refresh_cdse_token`
+    ne mute pas en place, même logique que `traiter_bandes_indices`).
 
     Portage de §3.2 (cellule 11, `process_scene_s32`). Retourne
-    `(scene_id, "OK"|"SKIP"|"ERREUR <msg>")`.
+    `(scene_id, "OK"|"SKIP"|"ERREUR <msg>", token)`.
     """
     scene_id, product_id, tile_id = row["scene_id"], row["product_id"], row["tile_id"]
     date_str = scene_id.split("_")[2]
@@ -215,14 +225,18 @@ def process_scene_bands(
     idx_dir = indices_dir / tile_id
     ndvi_path = idx_dir / f"{scene_id}_NDVI.tif"
     if ndvi_path.exists():
-        return (scene_id, "SKIP")
+        return (scene_id, "SKIP", token)
 
     granule_id = get_granule_id(product_id, scene_id, token)
     if granule_id is None:
-        return (scene_id, "ERREUR granule_id introuvable")
+        return (scene_id, "ERREUR granule_id introuvable", token)
 
     band_paths = {}
     for band, safe_dir, res_suffix in BANDES:
+        # Revérifié/rafraîchi avant chaque bande (pas seulement en tête de
+        # scène) : timer proactif (`expires_at`), no-op si le token en
+        # cours est encore valide — cf. docstring ci-dessus.
+        token = refresh_cdse_token(token)
         p = download_band(
             product_id,
             scene_id,
@@ -236,7 +250,7 @@ def process_scene_bands(
             bands_dir,
         )
         if p is None:
-            return (scene_id, f"ERREUR téléchargement {band}")
+            return (scene_id, f"ERREUR téléchargement {band}", token)
         band_paths[band] = p
 
     try:
@@ -301,11 +315,11 @@ def process_scene_bands(
             save_geotiff(arr, idx_dir / f"{scene_id}_{name}.tif", transform, ref_crs)
 
     except Exception as e:
-        return (scene_id, f"ERREUR {e}")
+        return (scene_id, f"ERREUR {e}", token)
     finally:
         gc.collect()
 
-    return (scene_id, "OK")
+    return (scene_id, "OK", token)
 
 
 def traiter_bandes_indices(
@@ -317,11 +331,13 @@ def traiter_bandes_indices(
 ) -> dict:
     """Boucle séquentielle sur toutes les scènes retenues (portage §3.2, boucle finale).
 
-    Le token CDSE est obtenu une fois puis rafraîchi ici, dans la boucle —
-    pas dans `process_scene_bands` — et **réassigné** à chaque itération
-    (`refresh_cdse_token` retourne un nouveau dict, ne mute pas en place ;
-    une réassignation manquante annulerait le bénéfice du partage, cf.
-    docstring de module).
+    Le token CDSE est obtenu une fois puis rafraîchi ici avant chaque
+    scène, **et aussi** à l'intérieur de `process_scene_bands` avant
+    chaque bande individuelle (correctif granularité, cf. `methode.md`
+    §S6) — cette dernière retourne le token éventuellement renouvelé,
+    **réassigné** ici à chaque itération (`refresh_cdse_token` retourne un
+    nouveau dict, ne mute pas en place ; une réassignation manquante
+    annulerait le bénéfice du partage, cf. docstring de module).
 
     Retourne `{"n_ok": int, "n_skip": int, "erreurs": [(scene_id, message), ...]}`.
     """
@@ -331,7 +347,7 @@ def traiter_bandes_indices(
 
     for i, (_, row) in enumerate(df_retenues.iterrows(), 1):
         token = refresh_cdse_token(token)
-        scene_id, status = process_scene_bands(
+        scene_id, status, token = process_scene_bands(
             row, token, aoi, scl_dir, bands_dir, indices_dir
         )
         if status == "OK":
