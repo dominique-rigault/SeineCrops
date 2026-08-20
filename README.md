@@ -273,7 +273,7 @@ jupyter notebook notebooks/02_disponibilite_s2.ipynb
 ```
 
 > Diagnostic catalogue pur - aucune image téléchargée.
-> La colonne `f_valid_aoi` est provisionnée à `NaN` ; elle sera calculée en sprint S2
+> La colonne `f_valid_aoi` est provisionnée à `NaN`; elle sera calculée en sprint S2
 > par téléchargement de la bande SCL (60 m) et calcul de la fraction de pixels valides
 > sur l'AOI (classes SCL invalides : 3, 8, 9, 10, 11).
 
@@ -381,7 +381,7 @@ Baseline Random Forest (`n_estimators=300`, `max_depth=30`, `min_samples_leaf=5`
 
 **S4 - Divergence & phénologie (terminé)**
 
-Distance RMS standardisée (z-score) au profil médian de classe ; lissage Whittaker
+Distance RMS standardisée (z-score) au profil médian de classe; lissage Whittaker
 pondéré (λ=800) pour SOS/POS/EOS/LOS, fenêtres calendaires par classe :
 
 | Indicateur | Valeur |
@@ -439,7 +439,7 @@ FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de bui
 Ce projet s'inscrit dans le contexte du **3STR** (Système de Suivi des Surfaces
 en Temps Réel), dispositif rendu obligatoire par la PAC 2023-2027 et mis en œuvre
 par l'ASP en France. La faisabilité scientifique de la classification par séries
-temporelles S2 est établie (BreizhCrops, PASTIS, iota2/CESBIO) ; SeineCrops
+temporelles S2 est établie (BreizhCrops, PASTIS, iota2/CESBIO); SeineCrops
 vise une **démonstration d'ingénierie opérationnelle de bout en bout** en open source.
 
 **Référence** : ASP - [Système de suivi des surfaces agricoles en temps réel (3STR)](https://www.asp.gouv.fr/missions-et-expertise/missions/pac-2023-2027/systeme-de-suivi-des-surfaces-agricoles-en-temps-reel)

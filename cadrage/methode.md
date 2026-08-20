@@ -245,8 +245,7 @@ macro test réel `0,890` vs `0,887` baseline). Même diagnostic que
 l'exécution notebook d'origine, même cause (`cv=3` aveugle au split
 spatial), même conclusion. **Conséquence pratique à corriger** : ce run
 a upserté le modèle tuné dans `derived.parcelles_classification`
-(`rf_tuned_20260815`), écrasant les prédictions baseline précédentes —
-à revenir au baseline (`python -m scripts.run_ml --skip-search`) tant
+(`rf_tuned_20260815`), écrasant les prédictions baseline précédentes, à revenir au baseline (`python -m scripts.run_ml --skip-search`) tant
 que le tuning n'est pas corrigé, plutôt que de garder en base un modèle
 qui surapprend davantage sans gain mesurable.
 
@@ -284,8 +283,7 @@ le rendre spatialement valide serait un chantier plus lourd
 (implémentation de bagging personnalisée) que d'ajouter `StratifiedGroupKFold`.
 
 **Coût inchangé** : toujours `60` fits (`20` itérations × `3` plis), donc
-un temps d'exécution du même ordre que le run déjà effectué (~7-8h) —
-la correction améliore la fiabilité du signal de sélection, pas la
+un temps d'exécution du même ordre que le run déjà effectué (~7-8h), la correction améliore la fiabilité du signal de sélection, pas la
 vitesse.
 
 **Features temporelles dérivées - testées, écartées.** Test ciblé (3 features, à partir de `s2_parcelles_ndvi_dates`, 3.6, filtrée sur `n_pixels >= 5`) : `amplitude_ndvi` (max − min saison), `jour_max_ndvi` (position temporelle du maximum), `pente_ndvi_mai_aout` (dérivée des composites mensuels déjà en base, sans dépendance à 3.6). Couverture 69 534 / 77 932 parcelles (89,2 % - écart expliqué par les 2 751 parcelles sans pixel 20 m connues de S2.4 et le filtre `n_pixels`, NaN laissé tel quel pour le reste plutôt qu'imputé). Résultat : **F1 macro inchangé (0,893)**. La confusion `autres`/`prairie` s'est redistribuée sans se réduire (total quasi stable, ~1090 parcelles dans les deux runs) : recall `autres` en hausse mais precision stable, signe que les nouvelles features changent le sens des erreurs sans réduire le chevauchement de signal entre les deux classes. `pente_ndvi_mai_aout` s'est classée 5ᵉ/707 en importance malgré un gain nul - cohérent avec une feature qui condense une information déjà accessible au modèle en deux splits (`NDVI_mean_2024-08` − `NDVI_mean_2024-05`), donc un gain de commodité structurelle pour l'arbre plutôt qu'un signal réellement nouveau. **Hypothèse retenue** : la confusion `autres`/`prairie` est plus probablement un problème de label RPG (la classe `autres` mélange des usages du sol à dynamiques hétérogènes) qu'un manque de feature - piste distincte, non investiguée à ce stade, différée.
@@ -487,11 +485,12 @@ Déploiement (Docker) repris en S6 (cf. section Déploiement ci-dessous). **Hors
 
 **Suppression des intermédiaires (`data/raw/s2/bands`, `data/raw/s2/indices`)** : tâche de nettoyage **séparée**, placée après une tâche de QC explicite validant les sorties finales (`stats_zonales` correctement écrites en base) - jamais fusionnée avec la tâche de traitement elle-même. Cette séparation répond directement à la leçon déjà actée plus bas dans ce document : la suppression prématurée des intermédiaires en S2 (avant détection du bug nodata) avait rendu la correction rétroactive impossible et imposé une reprise complète. Le nettoyage est conditionné à la réussite du QC, pas seulement à la réussite de la tâche précédente.
 
-**Mémoire pendant les étapes gourmandes** : deux mesures cumulatives, à affiner en cours de sprint plutôt qu'à figer a priori —
-- monitoring passif (`psutil`, log du pic mémoire en début/fin de tâche) pour observer et documenter la consommation réelle plutôt que la deviner ;
+**Mémoire pendant les étapes gourmandes** : deux mesures cumulatives, à affiner en cours de sprint plutôt qu'à figer a priori, - monitoring passif (`psutil`, log du pic mémoire en début/fin de tâche) pour observer et documenter la consommation réelle plutôt que la deviner ;
 - isolation par processus séparé pour les tâches les plus lourdes (`telechargement_bandes`, `composites_mensuels`), sur le même principe que le parallélisme multi-processus déjà retenu en S2 pour contourner la contention GIL : un processus qui se termine libère toute sa mémoire, contrairement à un run mono-processus qui accumule sur toute la durée du DAG.
 
 **Déclenchement : planifié** (cron Airflow), choisi comme objectif d'apprentissage plutôt que le déclenchement manuel. Fréquence à trancher en cours de sprint, alignée sur la réalité du pipeline plutôt que fixée arbitrairement - probablement mensuel, cohérent avec le composite mensuel médiane déjà en place (un cron plus fréquent n'apporterait rien tant que l'agrégation reste mensuelle).
+
+**`max_active_runs=1` (DAG A)** : ajouté après coup, pas anticipé à la conception initiale. Les chemins intermédiaires (`data/raw/s2/bands`, `data/raw/s2/indices`, catalogue `data/raw/s2/catalogue_dedup.parquet`) sont statiques, ancrés sur `ANNEE_REFERENCE`/`MILLESIME` (`src/config.py`), donc partagés entre tous les runs d'une même campagne - jamais partitionnés par `run_id` ni par `data_interval`. Repéré lors du premier run réel : un dépausage du DAG après une longue période d'erreur d'import a déclenché simultanément le run manuel de validation et le run planifié de rattrapage (`catchup=False` ne crée qu'un seul run de rattrapage, mais celui-ci s'ajoute à tout run déjà `queued`), les deux risquant d'écrire/lire les mêmes fichiers en parallèle. Deux options envisagées : `max_active_runs=1` (retenue, cf. paramètre déjà présent dans `seinecrops_acquisition_s2.py`) - cohérent avec l'usage réel du DAG, où un seul run mensuel a de toute façon du sens ; ou partitionner les chemins intermédiaires par `data_interval`, écartée pour l'instant (complexité non justifiée tant qu'aucun parallélisme n'est réellement souhaité). À reconsidérer seulement si un besoin de parallélisme entre campagnes (`ANNEE_REFERENCE` différentes exécutées simultanément) apparaissait.
 
 #### Migration notebooks → `src/`
 
@@ -569,8 +568,7 @@ quand il sera effectivement construit : une seule tâche
 
 **Les deux correctifs historiques de `resample_to_20m`** sont préservés à
 l'identique lors du portage (`src_nodata=0` pour les pixels hors fauchée ;
-fallback CRS via `ref_crs_wkt` plutôt qu'un codage en dur `EPSG:32630`) —
-seuls les noms de paramètres et le passage de `print` à `logger` ont changé,
+fallback CRS via `ref_crs_wkt` plutôt qu'un codage en dur `EPSG:32630`), seuls les noms de paramètres et le passage de `print` à `logger` ont changé,
 jamais la logique de reprojection. Code à considérer comme critique pour
 tout le pipeline : deux bugs majeurs déjà diagnostiqués y vivaient (cf.
 tableau des décisions clés, entrées S2 historiques).
@@ -649,8 +647,7 @@ exploratoires déjà exclus (`SOURCE.json`, vérification WFS du millésime).
 
 **`generer_diagnostics_modele` (nouveau, `train.py`)** : rapport de
 diagnostics HTML pour un modèle évalué (heatmap de la matrice de
-confusion, tableau détaillé, rapport de classification, top features) —
-pas un portage direct, ajouté pour permettre de consulter les performances
+confusion, tableau détaillé, rapport de classification, top features), pas un portage direct, ajouté pour permettre de consulter les performances
 au fil des runs (comparaison baseline/tuné, suivi dans le temps), sur le
 même principe que les diagnostics déjà en place pour l'acquisition et le
 traitement.
@@ -725,8 +722,7 @@ provoque des `RuntimeError: main thread is not in main loop` /
 (`RandomForestClassifier(n_jobs=-1)` notamment) - Tkinter n'est pas
 thread-safe. Détecté après un crash en toute fin d'un run
 `RandomizedSearchCV` de ~5h (60 fits, certaines combinaisons
-`max_features=0.2` avec beaucoup d'arbres coûtant jusqu'à 16 min chacune —
-durée largement sous-estimée au départ), juste avant l'écriture des
+`max_features=0.2` avec beaucoup d'arbres coûtant jusqu'à 16 min chacune, durée largement sous-estimée au départ), juste avant l'écriture des
 diagnostics finaux : calcul perdu, rien n'étant persisté avant cette
 étape. Le pipeline ne fait jamais d'affichage interactif (uniquement
 `savefig()`+`close()`), le backend `Agg` est donc strictement suffisant.
@@ -785,8 +781,7 @@ calculé ailleurs et non propagé.
 
 **Carte de répartition spatiale des divergences - observation notée, pas
 un bug** : deux lignes visibles au tracé similaire aux chevauchements de
-fauchées satellites (cohérent avec le flag raccord orbital déjà en place —
-13,6 % des parcelles concernées), un effet de littoral plausible, et 3
+fauchées satellites (cohérent avec le flag raccord orbital déjà en place, 13,6 % des parcelles concernées), un effet de littoral plausible, et 3
 amas moins attendus, non expliqués - investigation reportée à plus tard.
 
 **Suffixe `.SAFE` non normalisé** (`scripts/run_processing.py`) : le
@@ -838,8 +833,7 @@ provenance. Concrètement rencontré : des fichiers `31UCR` laissés par une
 exécution notebook antérieure au correctif CRS auraient été silencieusement
 réutilisés (skippés) sans le nettoyage manuel effectué avant ce run.
 Deux options actées :
-- **Option 1 (retenue immédiatement)** : procédure manuelle documentée —
-  toute correction touchant `resample_to_20m`/`compute_indices`/le calcul
+- **Option 1 (retenue immédiatement)** : procédure manuelle documentée, toute correction touchant `resample_to_20m`/`compute_indices`/le calcul
   géométrique impose de vider `data/raw/s2/bands/`/`data/raw/s2/indices/`
   avant le prochain run.
 - **Option 2 (différée à la conception du DAG)** : marqueur de version
@@ -978,8 +972,7 @@ une erreur de rééchantillonnage supplémentaire, plus visible aux
 frontières nettes de parcelles.
 
 **Implication** : la médiane inter-tuiles (§3.3, `compute_monthly_composite`)
-n'est donc pas seulement utile pour gérer les recouvrements multi-orbites
-— elle corrige aussi ces discontinuités de traitement Sen2Cor au sein d'un
+n'est donc pas seulement utile pour gérer les recouvrements multi-orbites, elle corrige aussi ces discontinuités de traitement Sen2Cor au sein d'un
 même passage, un problème plus large que ce qui avait été envisagé
 initialement. Confirme qu'aucun raccourci de calcul (sauter la médiane
 quand une seule orbite couvre l'AOI un jour donné) n'est valide.
@@ -996,8 +989,7 @@ contre `40s` de reprojection pour un composite), alors qu'un simple appel
 fraction de seconde en mémoire non contrainte.
 
 **Cause retenue** : pression mémoire déjà documentée (`Validée` `18+ Go`
-committés contre `~15 Go` de RAM physique disponible, confirmée stable —
-pas une fuite progressive, vérifié par un suivi de plusieurs mesures
+committés contre `~15 Go` de RAM physique disponible, confirmée stable, pas une fuite progressive, vérifié par un suivi de plusieurs mesures
 espacées et du nombre de handles ouverts, constant). `np.nanmedian`
 implique un tri interne, un accès mémoire non séquentiel bien plus
 sensible aux défauts de page qu'un parcours linéaire - sous swap, chaque
@@ -1090,8 +1082,7 @@ explicitement vu l'enjeu (leçon S2 déjà actée : suppression prématurée
 avant QC → correction rétroactive impossible).
 
 **Pool de ressources dédié** (`pool="lourd_memoire"`, `slots=1`) pour
-`traitement_bandes_indices`, `composites_mensuels`, `entrainement_ml` —
-garantit qu'aucune paire de ces tâches ne tourne jamais en parallèle,
+`traitement_bandes_indices`, `composites_mensuels`, `entrainement_ml`, garantit qu'aucune paire de ces tâches ne tourne jamais en parallèle,
 même si le scheduler Airflow le permettrait autrement. Justifié par la
 pression mémoire déjà rencontrée sur `composites_mensuels` (`§3.3`) et la
 contention CPU déjà rencontrée en faisant tourner deux instances de
@@ -1101,10 +1092,8 @@ contention CPU déjà rencontrée en faisant tourner deux instances de
 qui a nécessité de vérifier un point technique avant de trancher (cf.
 ci-dessous, disponibilité RPG vs Sentinel-2) :
 - `@monthly` pour la chaîne d'acquisition/traitement Sentinel-2
-  (`ingestion_rpg` → `qc_couverture_temporelle`/`composites_mensuels`) —
-  ne dépend que de l'imagerie, disponible en continu.
-- **Manuel/annuel** pour `entrainement_ml` et `divergence_phenologie` —
-  ces deux étapes dépendent du millésime RPG de la campagne, qui n'est
+  (`ingestion_rpg` → `qc_couverture_temporelle`/`composites_mensuels`), ne dépend que de l'imagerie, disponible en continu.
+- **Manuel/annuel** pour `entrainement_ml` et `divergence_phenologie`, ces deux étapes dépendent du millésime RPG de la campagne, qui n'est
   publié qu'une fois par an, avec un délai d'environ un an après la fin
   de la campagne observée (vérifié : le RPG millésime N est "arrêté au
   1er janvier de l'année N+1", et sa publication effective traîne souvent
@@ -1128,8 +1117,7 @@ COMPOSITES_VERSION = "1.0"   # bump uniquement si compute_monthly_composite chan
 ```
 `§4` (ML) n'a pas besoin de ce mécanisme : `predict.py` génère déjà un
 `model_version` horodaté à chaque run, et l'upsert dans
-`derived.parcelles_classification` ne garde qu'une ligne par parcelle —
-rejouer l'entraînement produit naturellement une nouvelle version sans
+`derived.parcelles_classification` ne garde qu'une ligne par parcelle, rejouer l'entraînement produit naturellement une nouvelle version sans
 vérification de fraîcheur à faire.
 
 **Écriture atomique - répond aussi à la question des exécutions
@@ -1192,3 +1180,98 @@ traitement S2 au moment de leur déclenchement - tant que le contrôle
 `PublicationDate` mensuel a bien rattrapé toute republication avant le
 déclenchement annuel, la cohérence est garantie sans logique de cascade
 explicite supplémentaire à ce niveau.
+
+
+
+#### Écart trouvé en écrivant le code des DAG, documenté, non corrigé
+
+En écrivant les tâches du DAG A (`dags/seinecrops_acquisition_s2.py`),
+chaque tâche reconstruit son contexte localement (relit le parquet du
+catalogue, recharge l'AOI, recalcule la grille) avant d'appeler les
+fonctions de `src/processing/orchestration.py`, plutôt que d'appeler ces
+fonctions directement comme le fait `scripts/run_processing.py`. Écart
+repéré en cours d'écriture, pas anticipé à la conception.
+
+**Cause** : `src/processing/orchestration.py` a été extrait de
+`scripts/run_processing.py` par simple déplacement, sans revisiter ses
+signatures. Ses fonctions prennent un `ctx: dict` partagé (DataFrame,
+GeoDataFrame, grille en mémoire), pensé pour un unique process séquentiel
+où ce dictionnaire vit du début à la fin. Incompatible avec Airflow, où
+chaque tâche peut tourner dans un worker séparé et ne peut échanger que
+des valeurs légères via XCom (jamais un DataFrame ou une grille complète),
+d'où la reconstruction locale dans chaque tâche du DAG, qui duplique de
+la logique de "colle" plutôt que de la centraliser.
+
+**Principe général dégagé de cette discussion**, indépendant de tout
+orchestrateur (à retenir pour la suite du projet et les suivants) :
+chaque fonction métier devrait être conçue dès le portage notebook vers
+module pour être idempotente et n'échanger que des valeurs légères et
+sérialisables (chemins, petits dictionnaires), jamais un état partagé
+volumineux en mémoire entre étapes. Appliqué correctement dès le départ,
+le découpage en tâches Airflow se lit alors de lui-même dans les
+frontières naturelles de la logique métier, et les scripts manuels
+(`run_*.py`) comme les DAG appellent les mêmes fonctions de la même
+façon, sans reconstruction ni duplication. Ce n'est pas le graphe Airflow
+qui doit dicter la conception des modules ; c'est un principe
+d'ingénierie (idempotence, interfaces légères) appliqué dès le portage,
+qui fait que le graphe Airflow s'en déduit naturellement.
+
+**Pourquoi `src/ml/orchestration.py` et `src/phenology/orchestration.py`
+n'ont pas ce problème** : dans le DAG B, chacune de leurs fonctions
+d'orchestration est appelée en une seule tâche Airflow
+(`entrainement_ml`, `divergence_phenologie`), aucune frontière XCom n'est
+traversée à l'intérieur, les DataFrames circulent en mémoire normalement
+entre les appels, exactement comme dans le script CLI. Seul
+`src/processing/orchestration.py` (DAG A, 7 tâches fines) est concerné,
+parce que son `ctx` partagé doit y traverser plusieurs frontières de
+tâches.
+
+**Décision actée** : le code reste en l'état (pas de refactor de
+`src/processing/orchestration.py` vers des signatures auto-suffisantes
+pour l'instant), écart documenté ici comme dette technique connue,
+plutôt que corrigé dans l'immédiat. À reprendre si l'ampleur de la
+duplication devient gênante en pratique, ou en début d'un prochain sprint
+structurant.
+
+#### Bug trouvé lors du premier run réel du DAG A (rafraîchissement de token CDSE)
+
+Premier déclenchement complet de `seinecrops_acquisition_s2` en conditions
+réelles (552 scènes retenues, `traitement_bandes_indices`). Symptôme :
+plusieurs erreurs `401 Unauthorized` isolées et sans conséquence tout au
+long du run (une bande perdue, reprise normale à la scène suivante), puis
+un échec total de la tâche après ~12h d'exécution, à 490 scènes traitées
+sur 552 :
+
+```
+File "src/processing/bands.py", line 333, in traiter_bandes_indices
+    token = refresh_cdse_token(token)
+File "src/acquisition/cdse.py", line 100, in refresh_cdse_token
+    resp.raise_for_status()
+requests.exceptions.HTTPError : 400 Client Error : Bad Request for url :
+https://identity.dataspace.copernicus.eu/.../token
+```
+
+**Cause** : `refresh_cdse_token` (`src/acquisition/cdse.py`) suppose que
+le *refresh token* reste valide sur toute la durée du run et ne gère que
+le cas de l'expiration du jeton d'accès (401 sur `download_band`,
+correctement absorbé). Après plusieurs heures d'exécution, le *refresh
+token* lui-même a expiré ; l'appel de rafraîchissement échoue alors avec
+un `400 Bad Request` non intercepté, qui remonte tel quel et fait échouer
+toute la tâche - malgré 490 scènes déjà traitées avec succès et
+persistées sur disque.
+
+**Impact pratique observé** : aucune perte de données (le run reprend
+proprement via `airflow tasks clear`, `download_band` skippant les
+scènes déjà présentes), mais interruption complète évitable d'un run
+mono-tâche de plusieurs heures pour une cause qui aurait pu être
+absorbée comme les 401 précédents.
+
+**Correctif appliqué** : `refresh_cdse_token` (`src/acquisition/cdse.py`)
+retombe désormais sur une ré-authentification complète (`get_cdse_token`)
+si le rafraîchissement échoue avec `400`/`401`, au lieu de laisser
+l'exception `HTTPError` remonter jusqu'à l'appelant. Un avertissement est
+loggué (`logger.warning`) pour tracer l'occurrence sans interrompre le
+run. Particulièrement pertinent une fois le DAG en déclenchement
+automatisé (planifié, sans supervision) - un run mensuel sans
+intervention manuelle ne doit pas dépendre d'un rattrapage `tasks clear`
+fait à la main.
