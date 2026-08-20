@@ -69,7 +69,8 @@ def get_granule_id(product_id: str, scene_id: str, token: dict) -> str | None:
     cas d'erreur réseau plutôt que de lever, pour ne pas interrompre une
     boucle sur des centaines de scènes pour un échec isolé.
     """
-    url = f"{ODATA_BASE_DL}/Products({product_id})/Nodes({scene_id}.SAFE)/Nodes(GRANULE)/Nodes"
+    scene_node = scene_id if scene_id.endswith(".SAFE") else f"{scene_id}.SAFE"
+    url = f"{ODATA_BASE_DL}/Products({product_id})/Nodes({scene_node})/Nodes(GRANULE)/Nodes"
     try:
         resp = requests.get(
             url,
@@ -118,8 +119,9 @@ def _telecharger_scl(
 
     date_str = scene_id.split("_")[2]  # YYYYMMDDTHHMMSS
     scl_name = f"T{tile_id}_{date_str}_SCL_60m.jp2"
+    scene_node = scene_id if scene_id.endswith(".SAFE") else f"{scene_id}.SAFE"
     url = (
-        f"{ODATA_BASE_DL}/Products({product_id})/Nodes({scene_id}.SAFE)"
+        f"{ODATA_BASE_DL}/Products({product_id})/Nodes({scene_node})"
         f"/Nodes(GRANULE)/Nodes({granule_id})/Nodes(IMG_DATA)/Nodes(R60m)/Nodes({scl_name})/$value"
     )
     try:
