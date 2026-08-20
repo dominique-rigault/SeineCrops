@@ -26,6 +26,8 @@ requests>=2.31                # Appels API OData CDSE (catalogue, téléchargeme
 
 # ── Traitement scientifique ───────────────────────────────────────────────────
 numpy>=1.26
+bottleneck>=1.3               # nanmedian/nanmean rapides (composites.py) — np.nanmedian mesuré
+                               # 7-13x plus lent sur la grille AOI (26M pixels), cf. methode.md §S6
 scipy>=1.11                   # Stats zonales (S3), lissage Savitzky-Golay (S4, métriques phéno SOS/POS/EOS)
 pandas>=2.1
 
