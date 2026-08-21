@@ -40,7 +40,9 @@ RF_PARAMS_BASELINE = dict(
     max_features="sqrt",
     class_weight="balanced",
     random_state=SEED,
-    n_jobs=-1,
+    n_jobs=2,  # borné plutôt que -1 : entrainement_ml tourne en parallèle
+    # de divergence_phenologie dans le même conteneur (graphe DAG B) ;
+    # -1 sature tous les cœurs visibles au pire moment
     oob_score=True,  # estimateur de généralisation quasi gratuit (chaque arbre évalué
     # sur les échantillons qu'il n'a pas vus) — comparer à l'accuracy
     # test donne un signal plus direct que le seul écart train/test

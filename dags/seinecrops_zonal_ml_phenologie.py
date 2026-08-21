@@ -104,7 +104,7 @@ def seinecrops_zonal_ml_phenologie():
         grille = grid.calculer_grille_aoi(aoi)
         run_zonal_ndvi_dates({"grille": grille})
 
-    @task
+    @task(pool="ml_intensif")
     def entrainement_ml(_stats_done: None, _completude_done: None) -> None:
         """§4.1-4.4 : classification ML.
 
@@ -127,7 +127,7 @@ def seinecrops_zonal_ml_phenologie():
             "rf_base",
         )
 
-    @task
+    @task(pool="ml_intensif")
     def divergence_phenologie(
         _stats_done: None, _completude_done: None, _ndvi_done: None
     ) -> None:
