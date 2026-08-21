@@ -1337,6 +1337,63 @@ plutôt que corrigé dans l'immédiat. À reprendre si l'ampleur de la
 duplication devient gênante en pratique, ou en début d'un prochain sprint
 structurant.
 
+#### Principe pour la suite : trois niveaux d'appel homogènes (tâche Airflow → orchestration → métier)
+
+Constat fait a posteriori sur les deux DAG, prolongement de l'écart
+documenté ci-dessus : la profondeur d'appel entre une tâche Airflow et le
+code métier varie selon les tâches, alors qu'un seul patron aurait pu
+s'appliquer partout. Trois niveaux, en théorie stricts :
+
+- **Niveau 0 (tâche Airflow)** : ne connaît que XCom, chemins et petits
+  dictionnaires sérialisables. N'importe qu'un seul module
+  d'orchestration de domaine.
+- **Niveau 1 (`orchestration.py` de domaine)** : expose un point
+  d'entrée unique par tâche, assemble lui-même son contexte (relit les
+  chemins, recharge l'AOI, calcule la grille si besoin) plutôt que de le
+  recevoir déjà construit.
+- **Niveau 2 (modules métier : `cdse.py`, `rpg.py`, `grid.py`, `qc.py`,
+  `features.py`, `split.py`, `train.py`, `predict.py`, `divergence.py`,
+  `phenology.py`, `persist.py`, `whittaker.py`, `imputation.py`)** :
+  fonctions pures, jamais importées directement depuis une tâche Airflow.
+
+Invariant recherché : chaque tâche appelle exactement une fonction de
+niveau 1, jamais une fonction de niveau 2 directement, et jamais
+plusieurs fonctions de niveau 1 enchaînées dans le corps de la tâche.
+`ingestion_rpg` → `run_rpg()` respecte déjà cet invariant de bout en
+bout. Trois tâches s'en écartent :
+
+1. `disponibilite_s2` (DAG A) appelle directement cinq fonctions de
+   `src/acquisition/cdse.py` (`get_cdse_token`,
+   `interroger_catalogue_complet`, `structurer_catalogue`,
+   `dedupliquer_catalogue`, `sauvegarder_catalogue`) au lieu de
+   `run_cdse()`, déjà disponible dans `src/acquisition/orchestration.py`
+   et qui fait presque la même chose (diagnostics et rapport en plus) :
+   duplication de logique entre les deux, contraire au principe posé en
+   tête de ce module.
+2. `grid.calculer_grille_aoi(aoi)`, fonction de niveau 2, est appelé
+   directement depuis cinq tâches différentes
+   (`qc_couverture_temporelle`, `composites_mensuels`,
+   `stats_zonales_mensuelles`, `completude_zonale`,
+   `ndvi_zonale_dates`), chacune rechargeant l'AOI et recalculant la
+   grille elle-même, plutôt que d'être encapsulé une seule fois au
+   niveau 1.
+3. `entrainement_ml` et `divergence_phenologie` (DAG B) n'ont pas de
+   point d'entrée de niveau 1 unique : chacune enchaîne quatre appels
+   (`preparer_feature_set` → `appliquer_split_spatial` →
+   `entrainer_et_evaluer` → `sauvegarder_predictions`, et l'équivalent
+   côté phénologie) directement dans le corps de la tâche.
+
+**Décision actée, identique à celle ci-dessus** : pas de refactor
+rétroactif sur S6. Correctif visé pour un prochain sprint structurant :
+ajouter `run_cdse_catalogue()` au niveau 1, déplacer le calcul de grille
+à l'intérieur des fonctions `run_zonal_*`/`run_qc_couverture`/
+`run_composites` elles-mêmes, ajouter `run_ml_pipeline()` et
+`run_phenologie_pipeline()` sur le modèle de `run_rpg()`. Ce principe des
+trois niveaux prolonge, côté appelant (le DAG), celui déjà posé plus haut
+côté signatures de fonctions (idempotence, interfaces légères) : les deux
+s'appliquent ensemble dès le portage notebook vers module, pour un
+prochain sprint plutôt qu'en correction a posteriori.
+
 #### Bug trouvé lors du premier run réel du DAG A (rafraîchissement de token CDSE)
 
 Premier déclenchement complet de `seinecrops_acquisition_s2` en conditions
@@ -1407,3 +1464,91 @@ migré vers `src/ml/orchestration.py` et
 en conditions réelles Airflow. À traiter avec la même vigilance
 (surveiller mémoire/perf/edge cases dès le premier run réel plutôt que
 supposer la migration `src/` équivalente au notebook).
+
+#### Bugs trouvés lors du premier run réel du DAG B (`seinecrops_zonal_ml_phenologie`)
+
+Même principe que pour le DAG A : la migration `src/`, déjà validée en tests
+manuels hors Airflow, révèle de nouveaux problèmes une fois orchestrée sur le
+volume complet (77 932 parcelles, 704 features), avec plusieurs tâches
+partageant les ressources du même conteneur.
+
+**1. `PSQL_BIN` incompatible conteneur/hôte**
+
+`.env` fixe `PSQL_BIN` au chemin Windows en dur du poste de développement
+(`psql` absent du `PATH` Windows). Ce même `.env` est monté tel quel dans le
+conteneur Airflow, où ce chemin n'existe pas côté Linux :
+PermissionError: [Errno 13] Permission denied: 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
+
+
+**Cause** : `_executer_psql` (`src/acquisition/rpg.py`) lit `PSQL_BIN` depuis
+l'environnement sans distinguer hôte et conteneur. Or `psql` est déjà
+installé et sur le `PATH` du conteneur (`apt-get install postgresql-client`,
+`Dockerfile`).
+
+**Correctif appliqué** : surcharge `PSQL_BIN=psql` dans `environment:`
+(`docker-compose.yml`, bloc `x-airflow-common`), même principe déjà en place
+pour `PG_HOST` : `environment:` a priorité sur `env_file:` pour une même clé,
+sans toucher au `.env` réel.
+
+**2. Boucle `melt` inutile dans `pivoter_features` (OOM)**
+
+`entrainement_ml` tué par `SIGKILL` (`return code -9`) pendant la préparation
+du feature set, juste après le chargement du format long (11 458 381
+lignes).
+
+**Cause** : `pivoter_features` (`src/ml/features.py`) faisait un aller-retour
+inutile long → plus long → wide : `mean`/`std`/`p10`/`p90` existaient déjà
+comme colonnes séparées dans le format long, et `melt()` les repassait en
+lignes (×4, ~45,8 millions de lignes) avant de les reconcaténer en chaîne
+(`variable + stat + mois`, `dtype object`) pour le `pivot()` final. Pic
+mémoire sur l'étape intermédiaire, jamais nécessaire au résultat.
+
+**Correctif appliqué** : remplacement par un `unstack` direct depuis le
+format déjà semi-large (`set_index([...])[stats].unstack([...])`), sans
+recréer de format plus long que l'original. Effet de bord utile : `unstack`
+lève une erreur explicite en cas de doublon `(id_parcel, mois, variable)`,
+que `melt`+`pivot` masquait silencieusement.
+
+**3. Contention mémoire : `entrainement_ml` et `divergence_phenologie` en parallèle**
+
+Même symptôme (`SIGKILL`, `return code -9`) reproduit après le correctif 2,
+cette fois pendant `rf.fit()`. `divergence_phenologie` tournait en parallèle
+dans le même conteneur (comportement normal du graphe, pas une coïncidence
+de planification), et `RF_PARAMS_BASELINE` avait `n_jobs=-1` : chaque worker
+`loky` est un sous-processus Python complet (réimport `numpy`/`pandas`/
+`scikit-learn`), au pire moment de contention.
+
+**Correctif appliqué** : `n_jobs=2` au lieu de `-1` (`src/ml/train.py`,
+`RF_PARAMS_BASELINE`) ; pool Airflow dédié `ml_intensif` (1 slot) sur
+`entrainement_ml` et `divergence_phenologie`, pour les sérialiser sans
+changer le graphe de dépendances. Création automatisée dans `airflow-init`
+(`docker-compose.yml`) :
+
+```bash
+airflow pools set ml_intensif 1 "RF/Whittaker séquentiels, contention mémoire sur poste de dev" || true
+```
+
+#### DAG B validé de bout en bout (`seinecrops_zonal_ml_phenologie`)
+
+Après les trois correctifs ci-dessus, `ingestion_rpg` → (`completude_zonale`
++ `stats_zonales_mensuelles` + `ndvi_zonale_dates`) → (`entrainement_ml` +
+`divergence_phenologie`) entièrement `success`.
+
+**Résultats du modèle baseline (`rf_base_20260821`)** : accuracy train
+0,9406, OOB 0,8729, test 0,8808 ; F1 macro 0,888. Classe `autres`
+nettement plus faible (precision 0,640, recall 0,702), cohérente avec son
+rôle de fourre-tout hétérogène. `skip_search` respecté : pas de
+`RandomizedSearchCV`, modèle final = baseline. 77 932 prédictions
+upsertées dans `derived.parcelles_classification`.
+
+**Ce que ce run valide** : comme pour le DAG A, l'orchestration
+elle-même (dépendances, idempotence de `completude_zonale` sur mois déjà
+en base, isolation/partage mémoire entre tâches parallèles) - deux bugs sur
+trois (`melt`, contention RF) n'étaient pas visibles en test manuel hors
+Airflow, révélés uniquement par l'exécution concurrente sur le volume
+complet.
+
+**Limitation connue, non corrigée ici** : `rechercher_hyperparametres`
+reste sur un `KFold` classique, aveugle au split spatial par blocs (cf.
+`train.py`, docstring de module). `StratifiedGroupKFold` reste à
+implémenter (cf. Limites documentées).
