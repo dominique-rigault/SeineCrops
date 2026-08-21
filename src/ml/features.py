@@ -65,17 +65,12 @@ def pivoter_features(
     stats × 16 mois ; passé en paramètre plutôt qu'en constante pour ne
     pas coupler ce module à une campagne donnée, cf. `src/config.py`).
     """
-    df_melt = df_long.melt(
-        id_vars=["id_parcel", "mois", "variable"],
-        value_vars=stats,
-        var_name="stat",
-        value_name="value",
+    df_wide = df_long.set_index(["id_parcel", "mois", "variable"])[stats].unstack(
+        ["variable", "mois"]
     )
-    df_melt["feature"] = (
-        df_melt["variable"] + "_" + df_melt["stat"] + "_" + df_melt["mois"]
-    )
-
-    df_wide = df_melt.pivot(index="id_parcel", columns="feature", values="value")
+    df_wide.columns = [
+        f"{variable}_{stat}_{mois}" for stat, variable, mois in df_wide.columns
+    ]
     df_wide.columns.name = None
 
     logger.info(

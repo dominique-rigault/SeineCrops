@@ -28,6 +28,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__SECRET_KEY: "une-valeur-fixe-quelconque-en-local"
     PYTHONPATH: /opt/airflow
     PG_HOST: host.docker.internal
+    PSQL_BIN: psql
   env_file:
     - .env
   volumes:
@@ -63,6 +64,7 @@ services:
       - -c
       - |
         airflow db migrate
+        airflow pools set ml_intensif 1 "RF/Whittaker séquentiels, contention mémoire sur poste de dev" || true
         airflow users create \
           --username admin --password admin \
           --firstname Dominique --lastname Rigault \

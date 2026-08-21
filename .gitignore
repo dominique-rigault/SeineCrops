@@ -41,6 +41,9 @@ data/raw/**/*.sql
 data/raw/**/*.parquet
 data/raw/s2/scl/
 data/raw/**/*.png
+# Rapports d'ingestion RPG (régénérés à chaque run, date_cloture non déterministe)
+data/raw/rpg/**/RECON.json
+data/raw/rpg/**/INGESTION_REPORT.json
 
 # ── Formats raster ────────────────────────────────────────────────────────────
 *.tif
