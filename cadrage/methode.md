@@ -553,7 +553,7 @@ Le module `logging` standard est utilisé dans `src/`, pas d'infrastructure de l
 
 Deux niveaux, complémentaires et non redondants :
 - **`logging`** : traçabilité d'exécution, éphémère, consultable pendant/juste après un run (Airflow, ou console en exécution notebook/manuelle).
-- **Rapports JSON** (`SOURCE.json`, `RECON.json`, `INGESTION_REPORT.json`, `AVAILABILITY_REPORT.json`...) : documentent le résultat final, persistants, versionnés à côté des données - déjà en place depuis S1/S2, non remis en cause par l'ajout du logging.
+- **Rapports JSON** (`SOURCE.json`, `AVAILABILITY_REPORT.json`...) : documentent le résultat final, persistants, versionnés à côté des données - déjà en place depuis S1/S2, non remis en cause par l'ajout du logging. Exception actée en S6 : `RECON.json`/`INGESTION_REPORT.json` (`01_ingestion_rpg.ipynb`/`src/acquisition/rpg.py`) sont exclus de `_gitignore` plutôt que versionnés - regénérés à chaque exécution de `ingestion_rpg`, `INGESTION_REPORT.json` embarquant `date_cloture=date.today()`, changeant même sans changement de données réel.
 
 #### Détails critiques `src/processing/`
 
@@ -928,7 +928,7 @@ tests sera implémentée.
 
 #### Documentation
 
-Dictionnaire de données PostGIS (par table `raw.*`/`derived.*` : colonnes, types, contraintes, origine), schéma de la base, README mis à jour jalon par jalon plutôt qu'en bloc final, note de méthode (ce document).
+Dictionnaire de données PostGIS (par table `raw.*`/`derived.*` : colonnes, types, contraintes, origine) et schéma de la base : `cadrage/dictionnaire_donnees_postgis.md` (nouveau, clôture S6) - DDL confirmé pour toutes les tables sauf le schéma natif complet de `raw.rpg_parcelles`/`raw.aoi_seinecrops` (chargement GDAL/`pyogrio`, hors DDL Python explicite). README mis à jour jalon par jalon plutôt qu'en bloc final, note de méthode (ce document).
 
 ---
 
@@ -1552,3 +1552,28 @@ complet.
 reste sur un `KFold` classique, aveugle au split spatial par blocs (cf.
 `train.py`, docstring de module). `StratifiedGroupKFold` reste à
 implémenter (cf. Limites documentées).
+
+#### Clôture du sprint S6
+
+**Hors périmètre, décision assumée plutôt qu'omission** : les tests
+automatisés (pytest, CI GitHub Actions - cf. section Tests) et le
+déploiement (conteneurisation de `src/api/` - cf. section Déploiement)
+restent tels que décrits, non implémentés. Objectif du projet atteint dès
+l'orchestration Airflow validée de bout en bout sur les deux DAG - ajouter
+ces deux volets n'aurait pas changé la démonstration technique visée
+(pipeline reproductible, industrialisé), pour un coût disproportionné à ce
+stade du portfolio. À reprendre uniquement si le projet évolue vers un
+usage au-delà de la démonstration (ex. contribution externe nécessitant
+une CI, mise à disposition réelle de l'API).
+
+**Documentation de clôture** : dictionnaire de données PostGIS et schéma
+de base (`cadrage/dictionnaire_donnees_postgis.md`), niveau de confiance
+différencié par table (DDL confirmé vs. documenté par recoupement,
+cf. le document lui-même).
+
+**SeineCrops S0-S6 : démonstration complète.** Ingestion RPG, séries
+temporelles Sentinel-2, classification Random Forest, divergence et
+phénologie, service API, orchestration Airflow bout en bout sur les deux
+DAG - chaîne reproductible du téléchargement brut à la prédiction
+persistée, avec chaque bug et décision documentés au fil de l'eau plutôt
+qu'a posteriori.
