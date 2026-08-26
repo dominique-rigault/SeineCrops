@@ -13,6 +13,7 @@ build/
 
 # ── Environnements virtuels ───────────────────────────────────────────────────
 .venv/
+.venv-geo/
 venv/
 env/
 .env
