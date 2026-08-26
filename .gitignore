@@ -13,6 +13,7 @@ build/
 
 # ── Environnements virtuels ───────────────────────────────────────────────────
 .venv/
+.venv-geo/
 venv/
 env/
 .env
@@ -27,8 +28,8 @@ credentials.json
 cdse_credentials.*
 sentinelhub_config.*
 
-# ── Documents de communicatrion ───────────────────────────────────────────────────
-docs/
+# ── Documents de communication ────────────────────────────────────────────────
+docs/communication/
 index-capture.html
 
 # ── Données brutes (volumineuses, non redistribuées) ─────────────────────────
