@@ -5,10 +5,12 @@ Construction de la matrice d'entrée du modèle à partir de
 parcelle × mois × variable) et de `derived.rpg_parcelles_aoi`
 (culture déclarée, regroupée en classes cibles).
 
-`GROUP_MAP` reste une constante de module (pas dans `src/config.py`) :
-c'est une décision de modélisation (le regroupement des `code_group` RPG
-en classes cibles), pas un paramètre de campagne comme `millesime`/
-`region_code` — sa place naturelle est avec le code qui l'utilise.
+Depuis la migration 0005 (sprint S3) : `classe_declaree` est calculée et
+centralisée en base (`CASE` SQL équivalent à l'ancien `GROUP_MAP`, cf.
+`db/migrations/0005_rpg_parcelles_aoi_classe_declaree.sql`) —
+`rpg_parcelles_aoi` est désormais la source de vérité, `GROUP_MAP` a
+disparu de ce module. Toute évolution du regroupement de classes doit
+être faite dans une nouvelle migration SQL, pas ici.
 """
 
 from __future__ import annotations
@@ -22,18 +24,6 @@ from src.db.connection import connexion
 logger = logging.getLogger(__name__)
 
 STATS = ["mean", "std", "p10", "p90"]
-
-# Mapping code_group RPG → classe cible (v3, 8 classes) — cf. §4.1 pour le détail
-GROUP_MAP = {
-    1: "cereales_hiver",  # Blé tendre
-    3: "cereales_hiver",  # Orge
-    2: "mais",  # Maïs grain et ensilage
-    5: "colza",  # Colza
-    9: "lin",  # Plantes à fibres (≈ lin fibre en Normandie)
-    18: "prairie",  # Prairies permanentes
-    19: "prairie",  # Prairies temporaires
-    25: "legumes_fleurs",  # Légumes ou fleurs
-}
 
 
 def charger_feature_set_long() -> pd.DataFrame:
@@ -85,31 +75,28 @@ def pivoter_features(
     return df_wide
 
 
-def charger_et_regrouper_classes(group_map: dict = GROUP_MAP) -> pd.DataFrame:
-    """Charge `code_group`/`code_cultu`, regroupe en classes cibles (portage cellule 5).
+def charger_et_regrouper_classes() -> pd.DataFrame:
+    """Charge la classe déclarée depuis `derived.rpg_parcelles_aoi` (portage cellule 5).
 
-    Retourne un DataFrame indexé `id_parcel`, colonne `classe` — les 6
-    `id_parcel` en doublon du RPG source sont dédupliqués (premier
-    conservé), déjà identifiés en S1.
+    Depuis la migration 0005 (sprint S3), `classe_declaree` est calculée et
+    centralisée en base : cette fonction se contente de la lire, elle ne
+    la recalcule plus (`GROUP_MAP` supprimé de ce module).
+
+    Retourne un DataFrame indexé `id_parcel`, colonne `classe` — une ligne
+    par parcelle garantie par la PK posée en 0003, plus besoin de
+    `drop_duplicates` ici.
     """
     with connexion() as conn:
-        df_labels = pd.read_sql(
-            "SELECT id_parcel, code_group::int AS code_group, code_cultu FROM derived.rpg_parcelles_aoi",
+        df_classes = pd.read_sql(
+            "SELECT id_parcel, classe_declaree AS classe FROM derived.rpg_parcelles_aoi",
             conn,
         )
-    df_labels = df_labels.drop_duplicates(subset="id_parcel", keep="first")
-
-    df_labels["classe"] = df_labels["code_group"].map(group_map).fillna("autres")
-    df_labels.loc[df_labels["code_cultu"] == "BTN", "classe"] = (
-        "betterave"  # exception : betterave hors GROUP_MAP
-    )
-
     logger.info(
-        "Classes assignées : %s parcelles\n%s",
-        f"{len(df_labels):,}",
-        df_labels["classe"].value_counts().to_string(),
+        "Classes chargées : %s parcelles\n%s",
+        f"{len(df_classes):,}",
+        df_classes["classe"].value_counts().to_string(),
     )
-    return df_labels.set_index("id_parcel")[["classe"]]
+    return df_classes.set_index("id_parcel")[["classe"]]
 
 
 def joindre_classes(df_wide: pd.DataFrame, df_classes: pd.DataFrame) -> pd.DataFrame:
