@@ -10,6 +10,12 @@ seulement au jeu de test : l'objectif n'est plus l'évaluation mais la
 couverture complète nécessaire à S4/S5. La colonne `split` est conservée
 pour distinguer une prédiction in-sample (train) d'une prédiction
 out-of-sample (test).
+
+Depuis la migration 0005 (sprint S3) : `classe_declaree` n'est plus
+écrite ici, elle vit uniquement sur `derived.rpg_parcelles_aoi` (cf.
+`db/migrations/0005_rpg_parcelles_aoi_classe_declaree.sql`). Tout
+consommateur qui a besoin de cette information la récupère par jointure
+sur `id_parcel`.
 """
 
 from __future__ import annotations
@@ -29,7 +35,6 @@ DDL_CLASSIFICATION = """
 CREATE TABLE IF NOT EXISTS derived.parcelles_classification (
     id_parcel       TEXT PRIMARY KEY,
     classe_predite  TEXT NOT NULL,
-    classe_declaree TEXT NOT NULL,
     proba_max       REAL NOT NULL,
     split           TEXT NOT NULL CHECK (split IN ('train', 'test')),
     model_version   TEXT NOT NULL,
@@ -57,8 +62,10 @@ def predire_toutes_parcelles(
     """Applique le modèle à toutes les parcelles, train et test confondus
     (portage cellule 31) — voir note de module sur la couverture complète.
 
-    Retourne un DataFrame `[id_parcel, classe_predite, classe_declaree,
-    proba_max, split, model_version]`.
+    Retourne un DataFrame `[id_parcel, classe_predite, proba_max, split,
+    model_version]`. `df_wide["classe"]` (classe déclarée) n'est plus
+    recopiée ici depuis la migration 0005 — disponible par jointure sur
+    `derived.rpg_parcelles_aoi` si besoin.
     """
     X_full = df_wide.loc[:, feature_cols].values
     proba_full = modele.predict_proba(X_full)
@@ -71,7 +78,6 @@ def predire_toutes_parcelles(
         {
             "id_parcel": df_wide.index,
             "classe_predite": y_pred_full,
-            "classe_declaree": df_wide["classe"].to_numpy(),
             "proba_max": proba_max_full,
             "split": df_wide["split"].to_numpy(),
             "model_version": model_version,
@@ -99,7 +105,6 @@ def upsert_predictions(df_predictions: pd.DataFrame) -> int:
             [
                 "id_parcel",
                 "classe_predite",
-                "classe_declaree",
                 "proba_max",
                 "split",
                 "model_version",
@@ -109,11 +114,10 @@ def upsert_predictions(df_predictions: pd.DataFrame) -> int:
 
     sql_upsert = """
         INSERT INTO derived.parcelles_classification
-            (id_parcel, classe_predite, classe_declaree, proba_max, split, model_version)
+            (id_parcel, classe_predite, proba_max, split, model_version)
         VALUES %s
         ON CONFLICT (id_parcel) DO UPDATE SET
             classe_predite  = EXCLUDED.classe_predite,
-            classe_declaree = EXCLUDED.classe_declaree,
             proba_max       = EXCLUDED.proba_max,
             split           = EXCLUDED.split,
             model_version   = EXCLUDED.model_version,
