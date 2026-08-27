@@ -1,7 +1,9 @@
 -- db/migrations/0003_derived_rpg_parcelles_aoi_pk.sql
+-- ATTENTION : non rejouable après application de 0004 (DROP TABLE bloqué par les FK).
+-- Un replay nécessiterait de defaire 0004 au préalable — cas volontairement non géré.
 BEGIN;
 
-CREATE TABLE derived.rpg_parcelles_aoi_dissolved AS
+CREATE TABLE IF NOT EXISTS derived.rpg_parcelles_aoi_dissolved AS
 WITH geom_union AS (
     SELECT id_parcel, ST_Union(geom) AS geom
     FROM derived.rpg_parcelles_aoi
@@ -25,9 +27,10 @@ ALTER TABLE derived.rpg_parcelles_aoi
     ALTER COLUMN id_parcel SET NOT NULL,
     ADD CONSTRAINT pk_rpg_parcelles_aoi PRIMARY KEY (id_parcel);
 
--- Index déjà documentés dans le dictionnaire, à recréer (perdus au DROP TABLE)
-CREATE INDEX idx_rpg_parcelles_aoi_geom ON derived.rpg_parcelles_aoi USING GIST (geom);
-CREATE INDEX idx_rpg_parcelles_aoi_code_cultu ON derived.rpg_parcelles_aoi (code_cultu);
+CREATE INDEX IF NOT EXISTS idx_rpg_parcelles_aoi_geom
+    ON derived.rpg_parcelles_aoi USING GIST (geom);
+CREATE INDEX IF NOT EXISTS idx_rpg_parcelles_aoi_code_cultu
+    ON derived.rpg_parcelles_aoi (code_cultu);
 
 INSERT INTO public.schema_migrations (version, description)
 VALUES ('0003', 'dissolve doublons id_parcel + PK sur derived.rpg_parcelles_aoi')

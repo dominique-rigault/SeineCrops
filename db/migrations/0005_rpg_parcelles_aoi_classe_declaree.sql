@@ -2,7 +2,7 @@
 BEGIN;
 
 ALTER TABLE derived.rpg_parcelles_aoi
-    ADD COLUMN classe_declaree text;
+    ADD COLUMN IF NOT EXISTS classe_declaree text;
 
 UPDATE derived.rpg_parcelles_aoi
 SET classe_declaree = CASE
@@ -19,9 +19,9 @@ END;
 ALTER TABLE derived.rpg_parcelles_aoi
     ALTER COLUMN classe_declaree SET NOT NULL;
 
-ALTER TABLE derived.parcelles_classification DROP COLUMN classe_declaree;
-ALTER TABLE derived.divergence               DROP COLUMN classe_declaree;
-ALTER TABLE derived.phenologie               DROP COLUMN classe_declaree;
+ALTER TABLE derived.parcelles_classification DROP COLUMN IF EXISTS classe_declaree;
+ALTER TABLE derived.divergence               DROP COLUMN IF EXISTS classe_declaree;
+ALTER TABLE derived.phenologie               DROP COLUMN IF EXISTS classe_declaree;
 
 INSERT INTO public.schema_migrations (version, description)
 VALUES ('0005', 'centralisation classe_declaree sur rpg_parcelles_aoi')
