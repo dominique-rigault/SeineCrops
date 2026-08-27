@@ -9,6 +9,12 @@ Upsert vectorisé via `psycopg2.extras.execute_values`.
 Depuis la migration 0005 (sprint S3) : `classe_declaree` n'est plus
 écrite ici, elle vit uniquement sur `derived.rpg_parcelles_aoi` (cf.
 `db/migrations/0005_rpg_parcelles_aoi_classe_declaree.sql`).
+
+Depuis la migration 0006 (sprint S3) : le DDL de `derived.divergence` et
+`derived.phenologie` n'est plus créé ici, il vit dans
+`db/migrations/0006_derived_ddl_classification_phenologie.sql`. Ce module
+suppose les deux tables déjà présentes en base (migrations rejouées avant
+tout traitement applicatif), cf. `src/phenology/orchestration.py`.
 """
 
 from __future__ import annotations
@@ -22,43 +28,6 @@ from psycopg2.extras import execute_values
 from src.db.connection import connexion
 
 logger = logging.getLogger(__name__)
-
-DDL_DIVERGENCE_PHENOLOGIE = """
-CREATE TABLE IF NOT EXISTS derived.divergence (
-    id_parcel             text PRIMARY KEY,
-    dist_classe           double precision,
-    seuil_div             double precision,
-    divergent             boolean,
-    dist_raccord          double precision,
-    zone_raccord_orbital  boolean,
-    version_pipeline      text NOT NULL,
-    date_calcul           timestamp NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS derived.phenologie (
-    id_parcel         text PRIMARY KEY,
-    sos_date          date,
-    pos_date          date,
-    eos_date          date,
-    los_jours         integer,
-    sos_en_bord       boolean,
-    eos_en_bord       boolean,
-    pos_en_bord       boolean,
-    fiable            boolean,
-    lambda_whittaker  double precision,
-    version_pipeline  text NOT NULL,
-    date_calcul       timestamp NOT NULL DEFAULT now()
-);
-"""
-
-
-def creer_tables_phenologie() -> None:
-    """Crée `derived.divergence` et `derived.phenologie` si absentes (portage cellule 18)."""
-    with connexion() as conn:
-        with conn.cursor() as cur:
-            cur.execute(DDL_DIVERGENCE_PHENOLOGIE)
-        conn.commit()
-    logger.info("Tables derived.divergence et derived.phenologie prêtes.")
 
 
 def to_native(v):
