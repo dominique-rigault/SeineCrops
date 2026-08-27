@@ -5,6 +5,10 @@ Deux tables dédiées (`derived.divergence`, `derived.phenologie`), avec
 (recalibrage de `λ`, ajustement de `FENETRES_PHENOLOGIE`), cohérent avec
 la décision déjà actée pour les prédictions de `src/ml/predict.py`.
 Upsert vectorisé via `psycopg2.extras.execute_values`.
+
+Depuis la migration 0005 (sprint S3) : `classe_declaree` n'est plus
+écrite ici, elle vit uniquement sur `derived.rpg_parcelles_aoi` (cf.
+`db/migrations/0005_rpg_parcelles_aoi_classe_declaree.sql`).
 """
 
 from __future__ import annotations
@@ -22,7 +26,6 @@ logger = logging.getLogger(__name__)
 DDL_DIVERGENCE_PHENOLOGIE = """
 CREATE TABLE IF NOT EXISTS derived.divergence (
     id_parcel             text PRIMARY KEY,
-    classe_declaree       text NOT NULL,
     dist_classe           double precision,
     seuil_div             double precision,
     divergent             boolean,
@@ -34,7 +37,6 @@ CREATE TABLE IF NOT EXISTS derived.divergence (
 
 CREATE TABLE IF NOT EXISTS derived.phenologie (
     id_parcel         text PRIMARY KEY,
-    classe_declaree   text NOT NULL,
     sos_date          date,
     pos_date          date,
     eos_date          date,
@@ -85,7 +87,6 @@ def upsert_divergence(df: pd.DataFrame, version_pipeline: str) -> int:
     """
     cols_div = [
         "id_parcel",
-        "classe",
         "dist_classe",
         "seuil_div",
         "divergent",
@@ -109,11 +110,10 @@ def upsert_divergence(df: pd.DataFrame, version_pipeline: str) -> int:
 
     sql = """
         INSERT INTO derived.divergence
-            (id_parcel, classe_declaree, dist_classe, seuil_div, divergent,
+            (id_parcel, dist_classe, seuil_div, divergent,
              dist_raccord, zone_raccord_orbital, version_pipeline)
         VALUES %s
         ON CONFLICT (id_parcel) DO UPDATE SET
-            classe_declaree = EXCLUDED.classe_declaree,
             dist_classe = EXCLUDED.dist_classe,
             seuil_div = EXCLUDED.seuil_div,
             divergent = EXCLUDED.divergent,
@@ -139,7 +139,6 @@ def upsert_phenologie(
     """
     cols_pheno = [
         "id_parcel",
-        "classe",
         "sos_date",
         "pos_date",
         "eos_date",
@@ -171,11 +170,10 @@ def upsert_phenologie(
 
     sql = """
         INSERT INTO derived.phenologie
-            (id_parcel, classe_declaree, sos_date, pos_date, eos_date, los_jours,
+            (id_parcel, sos_date, pos_date, eos_date, los_jours,
              sos_en_bord, eos_en_bord, pos_en_bord, fiable, lambda_whittaker, version_pipeline)
         VALUES %s
         ON CONFLICT (id_parcel) DO UPDATE SET
-            classe_declaree = EXCLUDED.classe_declaree,
             sos_date = EXCLUDED.sos_date,
             pos_date = EXCLUDED.pos_date,
             eos_date = EXCLUDED.eos_date,
