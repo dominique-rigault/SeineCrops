@@ -120,9 +120,13 @@ def extraire_phenologie_pipeline(df):
 
 
 def persister_resultats(df, df_pheno) -> None:
-    """§5.4 : DDL, upserts, vérification."""
+    """§5.4 : upserts, vérification.
+
+    Suppose `derived.divergence` et `derived.phenologie` déjà créées par la
+    migration `0006` (DDL versionné depuis le sprint S3, plus de
+    `CREATE TABLE` en dur ici, cf. `src/phenology/persist.py`).
+    """
     logger.info("=== §5.4, chargement PostGIS ===")
-    persist.creer_tables_phenologie()
     persist.upsert_divergence(df, VERSION_PIPELINE)
     persist.upsert_phenologie(df_pheno, whittaker.LAMBDA_WHITTAKER, VERSION_PIPELINE)
     persist.verifier_chargement()

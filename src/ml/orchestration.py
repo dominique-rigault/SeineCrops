@@ -99,9 +99,13 @@ def entrainer_et_evaluer(df_wide, skip_search: bool) -> dict:
 
 
 def sauvegarder_predictions(df_wide, modele, feature_cols, version_prefix: str) -> None:
-    """§4.4 : persistance des prédictions PostGIS."""
+    """§4.4 : persistance des prédictions PostGIS.
+
+    Suppose `derived.parcelles_classification` déjà créée par la migration
+    `0006` (DDL versionné depuis le sprint S3, plus de `CREATE TABLE` en dur
+    ici, cf. `src/ml/predict.py`).
+    """
     logger.info("=== §4.4, sauvegarde des prédictions ===")
-    predict.creer_table_classification()
     df_predictions = predict.predire_toutes_parcelles(
         modele, df_wide, feature_cols, version_prefix=version_prefix
     )

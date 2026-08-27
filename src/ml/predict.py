@@ -16,6 +16,12 @@ Depuis la migration 0005 (sprint S3) : `classe_declaree` n'est plus
 `db/migrations/0005_rpg_parcelles_aoi_classe_declaree.sql`). Tout
 consommateur qui a besoin de cette information la récupère par jointure
 sur `id_parcel`.
+
+Depuis la migration 0006 (sprint S3) : le DDL de `derived.parcelles_classification`
+n'est plus créé ici, il vit dans
+`db/migrations/0006_derived_ddl_classification_phenologie.sql`. Ce module
+suppose la table déjà présente en base (migrations rejouées avant tout
+traitement applicatif), cf. `src/ml/orchestration.py`.
 """
 
 from __future__ import annotations
@@ -30,27 +36,6 @@ from sklearn.ensemble import RandomForestClassifier
 from src.db.connection import connexion
 
 logger = logging.getLogger(__name__)
-
-DDL_CLASSIFICATION = """
-CREATE TABLE IF NOT EXISTS derived.parcelles_classification (
-    id_parcel       TEXT PRIMARY KEY,
-    classe_predite  TEXT NOT NULL,
-    proba_max       REAL NOT NULL,
-    split           TEXT NOT NULL CHECK (split IN ('train', 'test')),
-    model_version   TEXT NOT NULL,
-    date_prediction TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-"""
-# ⚠ Suppose id_parcel de type TEXT, cohérent avec derived.rpg_parcelles_aoi.id_parcel
-
-
-def creer_table_classification() -> None:
-    """Crée `derived.parcelles_classification` si absente (portage cellule 30, idempotent)."""
-    with connexion() as conn:
-        with conn.cursor() as cur:
-            cur.execute(DDL_CLASSIFICATION)
-        conn.commit()
-    logger.info("Table derived.parcelles_classification prête (créée si absente).")
 
 
 def predire_toutes_parcelles(
