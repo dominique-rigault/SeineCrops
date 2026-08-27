@@ -30,18 +30,15 @@ requête de `filtrer_aoi`) :
 | `culture_d1` | text | Culture dérobée 1 (si déclarée) |
 | `culture_d2` | text | Culture dérobée 2 (si déclarée) |
 | `cat_cult_p` | text | Catégorie de culture principale |
-| `wkb_geometry` | geometry(Polygon, 2154) | Géométrie de la parcelle |
+| `wkb_geometry` | geometry(MultiPolygon, 2154) | Géométrie de la parcelle |
 
-528 950 lignes (Normandie entière, avant filtre AOI). Pas de clé primaire
-ni d'index déclarés à ce niveau (créés seulement sur `derived.rpg_parcelles_aoi`).
+528 950 lignes (Normandie entière, avant filtre AOI). Clé primaire `ogc_fid` (`serial`) et index GIST sur `wkb_geometry`, posés par GDAL au chargement, confirmés par le DDL explicite de la migration `0002` (introspection `\d+` sur la base réelle).
 
 ### `raw.aoi_seinecrops`
 
 Polygone de la zone d'étude (Pays de Caux + Neubourg), chargé depuis
 `data/vector/aoi/aoi_seinecrops.geojson` via `charger_aoi_vers_raw`. Une
-seule ligne. Colonne géométrique `wkb_geometry` (**confirmé**, utilisée
-dans le `JOIN ST_Intersects` de `filtrer_aoi`) ; autres colonnes GDAL par
-défaut (`fid` probable) non vérifiées.
+seule ligne. Deux colonnes seulement : `ogc_fid` (`serial`, clé primaire) et `wkb_geometry` (**confirmé**, DDL explicite de la migration `0002`, introspection `\d+` sur la base réelle) ; pas de colonne `name` ni `display_name`.
 
 ---
 
@@ -63,7 +60,7 @@ paramétré.
 | `culture_d1` | text | Culture dérobée 1 |
 | `culture_d2` | text | Culture dérobée 2 |
 | `cat_cult_p` | text | Catégorie de culture principale |
-| `geom` | geometry(Polygon, 2154) | Géométrie (renommée depuis `wkb_geometry`) |
+| `geom` | geometry(MultiPolygon, 2154) | Géométrie (renommée depuis `wkb_geometry`) |
 
 **Index** (`indexer_rpg_aoi`) : `idx_rpg_parcelles_aoi_geom` (GIST sur
 `geom`), `idx_rpg_parcelles_aoi_code_cultu` (B-tree sur `code_cultu`).
@@ -250,9 +247,7 @@ erDiagram
 
 ---
 
-## À vérifier avant diffusion externe
+## Points antérieurement ouverts, refermés en sprint S3
 
-- Schéma complet natif de `raw.rpg_parcelles` (colonnes RPG non consommées
-  par le pipeline, non recensées ici - DDL généré par `pyogrio`/GDAL au
-  chargement, pas de `CREATE TABLE` explicite dans le code Python).
-- Colonnes de `raw.aoi_seinecrops` au-delà de la géométrie (même remarque).
+- Schéma complet natif de `raw.rpg_parcelles` : refermé, DDL explicite posé en migration `0002` (introspection `\d+` sur la base réelle) ; sections `raw.rpg_parcelles` et `raw.aoi_seinecrops` ci-dessus mises à jour en conséquence.
+- Colonnes de `raw.aoi_seinecrops` au-delà de la géométrie : refermé, même migration.
