@@ -20,7 +20,7 @@ SQL_FICHE_PARCELLE = """
     SELECT
         c.id_parcel,
         r.code_cultu,
-        c.classe_declaree AS classe_declaree_classif,
+        r.classe_declaree AS classe_declaree_classif,
         c.classe_predite,
         c.proba_max,
         d.dist_classe,
@@ -37,10 +37,16 @@ SQL_FICHE_PARCELLE = """
     LEFT JOIN derived.rpg_parcelles_aoi r USING (id_parcel)
     WHERE c.id_parcel = $1
 """
-# Ne récupère qu'une seule classe_declaree (celle de parcelles_classification,
-# retenue comme référence en 6.2) : le garde-fou de cohérence entre les 3
-# classe_declaree a déjà été exécuté une fois sur les 77 932 parcelles
-# (§6.2, 0 incohérence) — pas besoin de le revérifier à chaque appel API.
+# classe_declaree lue sur rpg_parcelles_aoi (r), seule source depuis la
+# migration 0005 (sprint S3) — auparavant lue sur parcelles_classification
+# (c), l'une des trois copies redondantes retenue comme référence après
+# le garde-fou de cohérence exécuté une fois sur les 77 932 parcelles
+# (§6.2, 0 incohérence). Le garde-fou reste valide comme preuve que la
+# centralisation n'a rien changé pour ces parcelles-là ; les 2 751
+# parcelles hors pipeline ML (absentes de s2_parcelles_monthly) ont
+# désormais elles aussi une classe_declaree en base, sans que ça change
+# le comportement de cet endpoint (pivot toujours sur parcelles_classification,
+# ces parcelles restent hors couverture de la fiche).
 
 
 async def fetch_parcelle_detail(
