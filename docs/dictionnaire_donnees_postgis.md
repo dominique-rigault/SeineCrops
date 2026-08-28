@@ -46,10 +46,13 @@ seule ligne. Deux colonnes seulement : `ogc_fid` (`serial`, clé primaire) et `
 
 ### `derived.rpg_parcelles_aoi`
 
-**Confirmé** (`CREATE TABLE ... AS SELECT`, `rpg.py::filtrer_aoi`). Pas de
-type explicitement déclaré (hérité de `raw.rpg_parcelles`) ni de clé
-primaire ni de contrainte `NOT NULL` - c'est un `CTAS`, pas un DDL
-paramétré.
+**Confirmé** (`CREATE TABLE ... AS SELECT`, `rpg.py::filtrer_aoi`) pour la
+structure d'origine ; complété par la migration `0003` (sprint S3), qui
+dissout les doublons `id_parcel` (`ST_Union` pour la géométrie, attribut
+de la géométrie la plus grande) et pose une `PRIMARY KEY` sur `id_parcel`
+(`NOT NULL` inclus). Type toujours hérité de `raw.rpg_parcelles`, sans
+déclaration explicite pour les autres colonnes - `0003` ne portait que sur
+`id_parcel`.
 
 | Colonne | Type (hérité de `raw.rpg_parcelles`) | Description |
 |---|---|---|
@@ -65,12 +68,14 @@ paramétré.
 **Index** (`indexer_rpg_aoi`) : `idx_rpg_parcelles_aoi_geom` (GIST sur
 `geom`), `idx_rpg_parcelles_aoi_code_cultu` (B-tree sur `code_cultu`).
 
-**Grain** : une ligne par parcelle. 80 689 lignes (intersection AOI, ST_Intersects,
-parcelles conservées entières).
+**Grain** : une ligne par parcelle, garanti par la `PRIMARY KEY` posée en
+`0003`. 80 683 lignes (intersection AOI, `ST_Intersects`, parcelles
+conservées entières ; 80 689 avant dissolve des 6 `id_parcel` dupliqués en
+`0003`).
 
 ### `derived.s2_parcelles_monthly`
 
-`src/processing/zonal.py::creer_tables_zonales`.
+DDL en migration `0007` (sprint S3) - sortie de `zonal.py::creer_tables_zonales`, supprimée du code applicatif (gabarit §9).
 
 | Colonne | Type SQL | Contrainte | Description |
 |---|---|---|---|
@@ -91,7 +96,7 @@ consommateur. ~11,46 millions de lignes en régime établi (77 932 parcelles
 
 ### `derived.s2_parcelles_completude`
 
-`src/processing/zonal.py::creer_tables_zonales`.
+DDL en migration `0007` (sprint S3) - sortie de `zonal.py::creer_tables_zonales`, supprimée du code applicatif (gabarit §9).
 
 | Colonne | Type SQL | Contrainte | Description |
 |---|---|---|---|
@@ -107,7 +112,7 @@ validité est partagé par les 11 variables d'une même scène - cf.
 
 ### `derived.s2_parcelles_ndvi_dates`
 
-`src/processing/zonal.py::creer_tables_zonales`.
+DDL en migration `0007` (sprint S3) - sortie de `zonal.py::creer_tables_zonales`, supprimée du code applicatif (gabarit §9).
 
 | Colonne | Type SQL | Contrainte | Description |
 |---|---|---|---|
@@ -124,30 +129,32 @@ Note : `whittaker.py::charger_ndvi_profils` ne lit que `mean`/`n_pixels`
 
 ### `derived.parcelles_classification`
 
-**Confirmé** (`predict.py::DDL_CLASSIFICATION`).
+**Confirmé**, DDL en migration `0006` (sprint S3) - sorti de
+`predict.py::DDL_CLASSIFICATION`, qui ne le déclare plus (gabarit §9).
 
 | Colonne | Type SQL | Contrainte | Description |
 |---|---|---|---|
-| `id_parcel` | TEXT | PRIMARY KEY | Identifiant parcelle |
+| `id_parcel` | TEXT | PRIMARY KEY, FK → `rpg_parcelles_aoi(id_parcel)` (`0004`) | Identifiant parcelle |
 | `classe_predite` | TEXT | NOT NULL | Classe prédite par le modèle |
-| `classe_declaree` | TEXT | NOT NULL | Classe déclarée RPG (regroupée, `GROUP_MAP`) |
 | `proba_max` | REAL | NOT NULL | Confiance du Random Forest (probabilité de la classe prédite) |
 | `split` | TEXT | NOT NULL, `CHECK IN ('train','test')` | Rôle de la parcelle lors de l'entraînement |
 | `model_version` | TEXT | NOT NULL | Identifiant de version du modèle (ex. `rf_base_20260821`) |
 | `date_prediction` | TIMESTAMPTZ | NOT NULL, DEFAULT `now()` | Horodatage de la prédiction |
 
+`classe_declaree` retirée de cette table en `0005` (sprint S3) :
+centralisée sur `rpg_parcelles_aoi`, lue par jointure sur `id_parcel`.
 Upsert `ON CONFLICT DO UPDATE` - une seule ligne par parcelle, rejouer
 l'entraînement écrase la précédente prédiction avec la nouvelle version.
 77 932 lignes (train + test).
 
 ### `derived.divergence`
 
-**Confirmé** (`persist.py::DDL_DIVERGENCE_PHENOLOGIE`).
+**Confirmé**, DDL en migration `0006` (sprint S3) - sorti de
+`persist.py::DDL_DIVERGENCE_PHENOLOGIE`, qui ne le déclare plus (gabarit §9).
 
 | Colonne | Type SQL | Contrainte | Description |
 |---|---|---|---|
-| `id_parcel` | text | PRIMARY KEY | Identifiant parcelle |
-| `classe_declaree` | text | NOT NULL | Classe déclarée RPG regroupée |
+| `id_parcel` | text | PRIMARY KEY, FK → `rpg_parcelles_aoi(id_parcel)` (`0004`) | Identifiant parcelle |
 | `dist_classe` | double precision | | Distance RMS au profil médian de la classe |
 | `seuil_div` | double precision | | Seuil de divergence (`k × IQR`, `k` par défaut 2,0) |
 | `divergent` | boolean | | Parcelle jugée divergente (`dist_classe > seuil_div`) |
@@ -156,16 +163,18 @@ l'entraînement écrase la précédente prédiction avec la nouvelle version.
 | `version_pipeline` | text | NOT NULL | Version du pipeline phénologie/divergence |
 | `date_calcul` | timestamp | NOT NULL, DEFAULT `now()` | Horodatage du calcul |
 
-Upsert `ON CONFLICT DO UPDATE`. 77 932 lignes.
+`classe_declaree` retirée de cette table en `0005` (sprint S3) : lue par
+jointure sur `rpg_parcelles_aoi`. Upsert `ON CONFLICT DO UPDATE`.
+77 932 lignes.
 
 ### `derived.phenologie`
 
-**Confirmé** (`persist.py::DDL_DIVERGENCE_PHENOLOGIE`).
+**Confirmé**, DDL en migration `0006` (sprint S3) - sorti de
+`persist.py::DDL_DIVERGENCE_PHENOLOGIE`, qui ne le déclare plus (gabarit §9).
 
 | Colonne | Type SQL | Contrainte | Description |
 |---|---|---|---|
-| `id_parcel` | text | PRIMARY KEY | Identifiant parcelle |
-| `classe_declaree` | text | NOT NULL | Classe déclarée RPG regroupée |
+| `id_parcel` | text | PRIMARY KEY, FK → `rpg_parcelles_aoi(id_parcel)` (`0004`) | Identifiant parcelle |
 | `sos_date` | date | | Date de début de saison (Start Of Season) |
 | `pos_date` | date | | Date de pic de saison (Peak Of Season) |
 | `eos_date` | date | | Date de fin de saison (End Of Season) |
@@ -178,30 +187,30 @@ Upsert `ON CONFLICT DO UPDATE`. 77 932 lignes.
 | `version_pipeline` | text | NOT NULL | Version du pipeline phénologie/divergence |
 | `date_calcul` | timestamp | NOT NULL, DEFAULT `now()` | Horodatage du calcul |
 
-Upsert `ON CONFLICT DO UPDATE`. 77 932 lignes. `autres` et `prairie`
-restent peu exploitables pour un usage phénologique fin (pas de fenêtre
-calendaire calibrée, couvert pérenne / classe hétérogène - cf.
-`methode.md`).
+`classe_declaree` retirée de cette table en `0005` (sprint S3) : lue par
+jointure sur `rpg_parcelles_aoi`. Upsert `ON CONFLICT DO UPDATE`.
+77 932 lignes. `autres` et `prairie` restent peu exploitables pour un
+usage phénologique fin (pas de fenêtre calendaire calibrée, couvert
+pérenne / classe hétérogène - cf. `methode.md`).
 
 ---
 
 ## Relations entre tables
 
-Aucune contrainte `FOREIGN KEY` n'est déclarée entre les tables
-`derived.*` - le lien se fait par convention sur `id_parcel` (`text`),
-cohérent d'une table à l'autre mais non contraint au niveau SQL. À garder
-en tête pour tout consommateur externe (API, requêtes ad hoc) : rien
-n'empêche en théorie une incohérence entre `derived.parcelles_classification`
-et `derived.rpg_parcelles_aoi` si l'une est rejouée sans l'autre.
+Depuis la migration `0004` (sprint S3), 6 contraintes `FOREIGN KEY` relient
+les tables `derived.*` à `derived.rpg_parcelles_aoi(id_parcel)` -
+posées après vérification de 0 orphelin sur le jeu complet. Avant `0004`,
+le lien se faisait par simple convention de nommage sur `id_parcel`
+(`text`), sans contrainte SQL ; ce n'est plus le cas.
 
 ```mermaid
 erDiagram
-    RPG_PARCELLES_AOI ||--o| PARCELLES_CLASSIFICATION : "id_parcel (convention, non FK)"
-    RPG_PARCELLES_AOI ||--o| DIVERGENCE : "id_parcel (convention, non FK)"
-    RPG_PARCELLES_AOI ||--o| PHENOLOGIE : "id_parcel (convention, non FK)"
-    RPG_PARCELLES_AOI ||--o{ S2_PARCELLES_MONTHLY : "id_parcel (convention, non FK)"
-    RPG_PARCELLES_AOI ||--o{ S2_PARCELLES_COMPLETUDE : "id_parcel (convention, non FK)"
-    RPG_PARCELLES_AOI ||--o{ S2_PARCELLES_NDVI_DATES : "id_parcel (convention, non FK)"
+    RPG_PARCELLES_AOI ||--o| PARCELLES_CLASSIFICATION : "id_parcel (FK, 0004)"
+    RPG_PARCELLES_AOI ||--o| DIVERGENCE : "id_parcel (FK, 0004)"
+    RPG_PARCELLES_AOI ||--o| PHENOLOGIE : "id_parcel (FK, 0004)"
+    RPG_PARCELLES_AOI ||--o{ S2_PARCELLES_MONTHLY : "id_parcel (FK, 0004)"
+    RPG_PARCELLES_AOI ||--o{ S2_PARCELLES_COMPLETUDE : "id_parcel (FK, 0004)"
+    RPG_PARCELLES_AOI ||--o{ S2_PARCELLES_NDVI_DATES : "id_parcel (FK, 0004)"
 
     RPG_PARCELLES_AOI {
         text id_parcel PK
@@ -251,3 +260,8 @@ erDiagram
 
 - Schéma complet natif de `raw.rpg_parcelles` : refermé, DDL explicite posé en migration `0002` (introspection `\d+` sur la base réelle) ; sections `raw.rpg_parcelles` et `raw.aoi_seinecrops` ci-dessus mises à jour en conséquence.
 - Colonnes de `raw.aoi_seinecrops` au-delà de la géométrie : refermé, même migration.
+- Absence de `PRIMARY KEY` sur `derived.rpg_parcelles_aoi` : refermé, migration `0003` (dissolve des 6 doublons `id_parcel` + PK).
+- Absence de `FOREIGN KEY` entre `derived.*` : refermé, migration `0004` (6 FK vers `rpg_parcelles_aoi`, 0 orphelin vérifié).
+- `classe_declaree` dupliquée sur 3 tables filles : refermé, migration `0005` (centralisation sur `rpg_parcelles_aoi`, colonne retirée de `parcelles_classification`, `divergence`, `phenologie`).
+- `DDL_CLASSIFICATION`/`DDL_DIVERGENCE_PHENOLOGIE` en dur dans `predict.py`/`persist.py` : refermé, migration `0006` (DDL sorti du code applicatif, fonctions `creer_table_classification()`/`creer_tables_phenologie()` supprimées, appelants dans `orchestration_ml.py`/`orchestration_phenologie.py` mis à jour).
+- DDL de `s2_parcelles_monthly`/`_completude`/`_ndvi_dates` en dur dans `zonal.py` : refermé, migration `0007` (fonction `creer_tables_zonales()` supprimée, appelant dans `orchestration_processing.py` mis à jour).
