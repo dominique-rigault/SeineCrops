@@ -43,22 +43,6 @@ Orchestration : Airflow · CI/CD : GitHub Actions
 
 ---
 
-## Statut
-
-> 🚧 **En cours de construction** - sprint S6 (industrialisation)
-
-| Sprint | Objectif | Statut |
-|---|---|---|
-| S0 - Cadrage | Cadrage, dépôt Git, AOI, choix année RPG | ✅ |
-| S1 - Données | Disponibilité S2 + ingestion RPG dans PostGIS | ✅ |
-| S2 - Séries | Téléchargement SCL, indices, composite mensuel, table spatio-temporelle | ✅ |
-| S3 - Classification | Baseline RF, évaluation, option DL | ✅ |
-| S4 - Divergence & phéno | Détection divergence + métriques SOS/POS/EOS | ✅ |
-| S5 - Service | FastAPI + carte web | ✅ |
-| S6 - Industrialisation | Airflow, tests, CI/CD, documentation | ⬜ |
-
----
-
 ## Zone d'étude & période
 
 - **AOI** : Pays de Caux + plateau du Neubourg (Eure), de part et d'autre
@@ -139,12 +123,20 @@ SeineCrops/
 │           └── sentinel2_4tuiles_2154.gpkg       # emprise des 4 tuiles Sentinel-2 (EPSG:2154)
 ├── divergence/
 ├── docs/                     # Dictionnaire de données, schéma PostGIS
-├── notebooks/
-│   ├── 01_ingestion_rpg.ipynb    # S1 : acquisition RPG, PostGIS, filtre AOI, QA (sections 1–5)
-│   ├── 02_disponibilite_s2.ipynb # S1 : diagnostic catalogue CDSE, disponibilité mensuelle (sections 1–5)
-│   ├── 03_series_s2.ipynb        # S2 : SCL, bandes, indices, composite mensuel, agrégation zonale (sections 3.1–3.4)
-│   ├── 04_classification.ipynb   # S3 : baseline RF, split spatial par blocs, évaluation (F1 macro 0,893)
-│   └── 05_divergence_pheno.ipynb # S4 : distance RMS standardisée, phénologie Whittaker SOS/POS/EOS (sections 5.1–5.4)
+├── notebooks/                 # Prototypage historique - non nécessaires pour reproduire
+│   │                          # le pipeline, portés vers src/*/orchestration.py + scripts/
+│   ├── 01_ingestion_rpg.ipynb    # Acquisition RPG, PostGIS, filtre AOI, QA (sections 1–5)
+│   ├── 02_disponibilite_s2.ipynb # Diagnostic catalogue CDSE, disponibilité mensuelle (sections 1–5)
+│   ├── 03_series_s2.ipynb        # SCL, bandes, indices, composite mensuel, agrégation zonale (sections 3.1–3.4)
+│   ├── 04_classification.ipynb   # Baseline RF, split spatial par blocs, évaluation (F1 macro 0,893)
+│   └── 05_divergence_pheno.ipynb # Distance RMS standardisée, phénologie Whittaker SOS/POS/EOS (sections 5.1–5.4)
+├── db/
+│   └── migrations/            # DDL versionné, 0001 à 0007, à rejouer dans l'ordre
+├── scripts/                   # Enveloppes CLI (§ Démarrage rapide), utilisées aussi par le DAG Airflow
+│   ├── run_ingestion.py          # Ingestion RPG + catalogue CDSE (portage 01+02)
+│   ├── run_processing.py         # Séries temporelles S2 (portage 03)
+│   ├── run_ml.py                 # Classification (portage 04)
+│   └── run_phenology.py          # Divergence/phénologie (portage 05)
 ├── src/
 │   ├── acquisition/          # Téléchargement S2, ingestion RPG
 │   ├── processing/           # Masque nuages, indices, composite
@@ -152,14 +144,14 @@ SeineCrops/
 │   │   └── init.sql          # extension PostGIS, schémas raw / derived
 │   ├── ml/                   # Classification et détection de divergence
 │   ├── phenology/            # Métriques SOS/POS/EOS
-│   └── api/                  # FastAPI (S5)
+│   └── api/                  # FastAPI
 │       ├── __init__.py
 │       ├── db.py             # pool asyncpg, chargement .env, détection .projectroot
 │       ├── schemas.py        # modèles Pydantic (ParcelleDetail, ParcelleProfil)
 │       ├── queries.py        # requêtes SQL + assemblage ligne DB → modèle Pydantic
 │       └── main.py           # application FastAPI, routes /parcelles/{id}, /parcelles/{id}/profil, /parcelles?bbox=
 ├── web/
-│   └── index.html            # carte web MapLibre (S5) - fond OSM, couche parcelles, panneau de détail + graphique NDVI
+│   └── index.html            # carte web MapLibre - fond OSM, couche parcelles, panneau de détail + graphique NDVI
 ├── tests/
 │   ├── conftest.py
 │   └── api/
@@ -198,10 +190,28 @@ pip install -r requirements.txt
 pre-commit install
 ```
 
+> **Notebooks non nécessaires pour reproduire le pipeline.** `notebooks/`
+> ne contient que les carnets de prototypage historiques - toute la chaîne
+> reproductible passe désormais par `scripts/run_*.py` (voir plus bas).
+> Aucun notebook n'a besoin d'être ouvert ni exécuté. Pour ne même pas les
+> récupérer au clonage :
+>
+> ```bash
+> git clone --filter=blob:none --no-checkout \
+>     https://github.com/dominique-rigault/SeineCrops.git
+> cd SeineCrops
+> git sparse-checkout init --no-cone
+> printf '/*\n!/notebooks/\n' > .git/info/sparse-checkout
+> git checkout main
+> ```
+>
+> Nécessite Git ≥ 2.25 (sparse-checkout non-cone) - à vérifier avec
+> `git --version` si la commande échoue.
+
 **Compte Copernicus Data Space Ecosystem (CDSE)**
 
 Un compte gratuit est nécessaire pour interroger le catalogue Sentinel-2 et
-télécharger les produits L2A (sprint S2 et suivants).
+télécharger les produits L2A (nécessaire pour les séries temporelles et la suite du pipeline).
 
 1. S'inscrire sur [dataspace.copernicus.eu](https://dataspace.copernicus.eu)
 2. Confirmer l'adresse e-mail (lien envoyé par CDSE)
@@ -212,7 +222,7 @@ télécharger les produits L2A (sprint S2 et suivants).
 
 **Variables d'environnement (`.env`)**
 
-Copier `.env.example` et renseigner toutes les variables avant d'exécuter les notebooks :
+Copier `.env.example` et renseigner toutes les variables avant d'exécuter les scripts :
 
 ```bash
 cp .env.example .env
@@ -237,9 +247,21 @@ cp .env.example .env
 # Créer la base et activer PostGIS + schémas (raw, derived)
 psql -U postgres -c "CREATE DATABASE seinecrops;"
 psql -U postgres -d seinecrops -f src/db/init.sql
+
+# Rejouer les migrations de schéma (PK/FK, classe_declaree
+# centralisée, DDL des tables S2/ML/phénologie), dans l'ordre numérique
+for f in db/migrations/*.sql; do
+    psql -U postgres -d seinecrops -f "$f" -v ON_ERROR_STOP=1
+done
 ```
 
-**Ingestion RPG (sprint S1 - terminée)**
+> Les migrations sont forward-only (pas de rollback) et pour la plupart
+> idempotentes (`IF NOT EXISTS`) - sûres à rejouer sur une base déjà à
+> jour, sauf `0004` (ajout de contraintes `FOREIGN KEY`, sans équivalent
+> `IF NOT EXISTS` en PostgreSQL) : une exécution en double y échouera
+> proprement plutôt que silencieusement.
+
+**Ingestion RPG + catalogue Sentinel-2**
 
 ```bash
 # Télécharger l'archive régionale RPG depuis la page produit IGN :
@@ -247,52 +269,128 @@ psql -U postgres -d seinecrops -f src/db/init.sql
 # → Normandie (R28) · RPG Parcelles · millésime 2024
 # Déposer l'archive dans : data/raw/rpg/2024/R28/
 
-# Ouvrir et exécuter le notebook d'ingestion (Run All)
-jupyter notebook notebooks/01_ingestion_rpg.ipynb
-# Section 1 : récupération et traçabilité du millésime (SOURCE.json)
-# Section 2 : reconnaissance du GeoPackage (RECON.json)
-# Section 3 : connexion PostGIS (DB.json)
-# Section 4 : chargement raw + QA géométrique + filtre AOI (derived)
-# Section 5 : assertions de cohérence + rapport de clôture (INGESTION_REPORT.json)
+# Compte CDSE requis (voir ci-dessus) pour le volet catalogue Sentinel-2.
+# Credentials renseignés dans .env.
+python -m scripts.run_ingestion
+# --skip-rpg   : catalogue CDSE seul (nécessite un run RPG préalable)
+# --skip-cdse  : ingestion RPG seule
 ```
 
-> La décompression de l'archive `.7z` est automatique (via `py7zr`).
-> Le chargement PostGIS passe par le driver PGDUMP de GDAL + `psql`
-> (`ogr2ogr` et le driver PostgreSQL natif sont absents de cet environnement Windows).
+> Effets : décompression automatique de l'archive `.7z` (via `py7zr`) en
+> `.gpkg` local, non versionné ; 4 fichiers de traçabilité
+> (`SOURCE.json`, `RECON.json`, `DB.json`, `INGESTION_REPORT.json`) ;
+> chargement PostGIS via le driver PGDUMP de GDAL + `psql` (`ogr2ogr` et
+> le driver PostgreSQL natif sont absents de cet environnement Windows) ;
+> `raw.rpg_parcelles`/`raw.aoi_seinecrops` peuplées, `derived.rpg_parcelles_aoi`
+> créée par filtre AOI ; côté catalogue, `AVAILABILITY_REPORT.json` généré,
+> aucune image téléchargée à ce stade (diagnostic pur).
 
-**Diagnostic disponibilité Sentinel-2 (sprint S1 - terminé)**
+> **Millésime non paramétrable en ligne de commande.** Aucun des scripts
+> `scripts/run_*.py` n'expose de `--millesime`/`--annee` : l'année RPG
+> (`2024`), la fenêtre temporelle Sentinel-2 et les chemins de campagne
+> sont des constantes de `src/config.py`. Pour traiter un autre millésime,
+> modifier ce fichier avant d'exécuter les scripts, plutôt que de
+> s'appuyer sur un argument d'exécution qui n'existe pas.
 
-```bash
-# Compte CDSE requis (voir ci-dessus). Credentials renseignés dans .env.
-jupyter notebook notebooks/02_disponibilite_s2.ipynb
-# Section 1 : authentification CDSE (OAuth, rafraîchissement token)
-# Section 2 : requête catalogue OData - 4 tuiles, pagination, sans filtre nuage
-# Section 3 : structuration DataFrame (pair, date, cloud_cover_catalogue, f_valid_aoi)
-# Section 4 : déduplication par baseline + statistiques mensuelles (partiel / quasi complet)
-# Section 5 : histogramme de disponibilité + AVAILABILITY_REPORT.json
-```
-
-> Diagnostic catalogue pur - aucune image téléchargée.
-> La colonne `f_valid_aoi` est provisionnée à `NaN`; elle sera calculée en sprint S2
-> par téléchargement de la bande SCL (60 m) et calcul de la fraction de pixels valides
-> sur l'AOI (classes SCL invalides : 3, 8, 9, 10, 11).
-
-**Séries temporelles Sentinel-2 (sprint S2 - terminé)**
+**Séries temporelles Sentinel-2**
 
 ```bash
 # Compte CDSE requis. Credentials renseignés dans .env.
-# Base PostGIS avec derived.rpg_parcelles_aoi (sprint S1) requise.
-jupyter notebook notebooks/03_series_s2.ipynb
-# Section 3.1 : téléchargement SCL (60 m) et calcul f_valid_aoi par scène
-# Section 3.2 : téléchargement bandes (B02, B04, B05, B06, B07, B08, B11),
-#               resampling 20 m → 10 m, calcul indices (NDVI, EVI, NDWI, NDRE)
-# Section 3.3 : composite mensuel AOI (médiane deux étapes : journalière → mensuelle)
-# Section 3.4 : agrégation zonale (mean, std, p10, p90) → derived.s2_parcelles_monthly
+# Base PostGIS avec derived.rpg_parcelles_aoi (étape précédente) requise.
+python -m scripts.run_processing
+# --skip-scl / --skip-bands / --skip-composites / --skip-zonal : reprise partielle
 ```
 
-> La section 3.3 inclut un point d'arrêt manuel entre chaque mois pour libérer
-> l'espace disque (suppression des GeoTIFF par scène après compositage).
-> Les composites déjà produits sont skippés automatiquement à la relance.
+> Effets : téléchargement SCL puis bandes/indices (B02, B04, B05, B06,
+> B07, B08, B11, NDVI, EVI, NDWI, NDRE), 176 GeoTIFF de composites
+> mensuels dans `data/raw/s2/composites/<YYYY-MM>/` (non versionnés,
+> suppression automatique des scènes source après compositage pour
+> libérer l'espace disque, composites déjà produits skippés à la relance),
+> `derived.s2_parcelles_monthly`/`_completude`/`_ndvi_dates` peuplées par
+> agrégation zonale.
+
+**Classification**
+
+```bash
+# Base PostGIS avec derived.s2_parcelles_monthly (étape précédente) requise.
+python -m scripts.run_ml
+# --skip-search : modèle baseline uniquement, sans RandomizedSearchCV (plus rapide)
+```
+
+> Effets : aucun fichier. `derived.parcelles_classification` peuplée
+> (upsert `ON CONFLICT DO UPDATE` - une ligne par parcelle, un nouveau
+> run écrase la prédiction précédente avec la nouvelle version de modèle).
+
+**Divergence & phénologie**
+
+```bash
+# Base PostGIS avec derived.parcelles_classification (étape précédente) requise.
+python -m scripts.run_phenology
+```
+
+> Effets : aucun fichier, hors 2 appels à l'API CDSE (empreintes de
+> scènes pour `zone_raccord_orbital`) - appel obligatoire mais
+> skippable sans faire planter le run (dégrade seulement
+> `dist_raccord`/`zone_raccord_orbital`). `derived.divergence` et
+> `derived.phenologie` peuplées (upsert `ON CONFLICT DO UPDATE`).
+
+**Service (API + carte web)**
+
+```bash
+# Base PostGIS avec derived.divergence/derived.phenologie (étape précédente) requise.
+uvicorn src.api.main:app --reload
+```
+
+> Effets : aucun fichier, aucune écriture en base (lecture seule).
+> Endpoints `GET /parcelles/{id}`, `GET /parcelles/{id}/profil`,
+> `GET /parcelles?bbox=`, `GET /health`. Ouvrir ensuite `web/index.html`
+> dans un navigateur pour la carte interactive (MapLibre, fond OSM, sans
+> étape de build).
+
+**Orchestration Airflow (optionnelle, via Docker)**
+
+Alternative à l'enchaînement manuel des scripts ci-dessus : les 4 étapes
+d'acquisition/traitement sont orchestrées par deux DAG Airflow
+(`seinecrops_acquisition_s2`, `seinecrops_zonal_ml_phenologie`).
+
+```bash
+docker compose up airflow-init
+docker compose up -d
+```
+
+Interface Airflow sur [http://localhost:8080](http://localhost:8080),
+identifiants créés automatiquement par `airflow-init` : `admin` / `admin`.
+Déclenchement des DAG depuis l'interface, ou en CLI :
+
+```bash
+docker compose exec airflow-webserver airflow dags trigger seinecrops_acquisition_s2
+docker compose exec airflow-webserver airflow dags trigger seinecrops_zonal_ml_phenologie
+```
+
+> **Seul Airflow est conteneurisé, pas PostGIS.** La base `seinecrops`
+> reste sur l'hôte Windows (celle créée plus haut avec `psql`) - seule la
+> base de métadonnées Airflow (`postgres-airflow`) tourne en conteneur.
+> `.env` est réutilisé tel quel (monté dans les conteneurs) : `PG_HOST`
+> y est probablement `localhost`, valable sur l'hôte mais pas depuis un
+> conteneur - `docker-compose.yml` le surcharge automatiquement en
+> `host.docker.internal` (le nom DNS fourni par Docker Desktop pour
+> atteindre l'hôte), aucune modification manuelle du `.env` n'est
+> nécessaire pour ça.
+>
+> Dépendances Airflow dans `requirements-airflow.txt` (distinct de
+> `requirements.txt`, utilisé en local) ; `docker compose build` ne
+> recharge pas les conteneurs déjà démarrés - refaire `docker compose up -d`
+> après un build pour que la nouvelle image soit utilisée. Le pool Airflow
+> `ml_intensif` (1 slot, sérialise `entrainement_ml` et
+> `divergence_phenologie` pour éviter une contention mémoire) et
+> l'utilisateur `admin` sont créés automatiquement par `airflow-init`.
+>
+> **Hors périmètre, non implémenté** (`methode.md`, clôture du sprint
+> d'industrialisation) : tests automatisés (pytest/CI GitHub Actions) et
+> conteneurisation de l'API (`src/api/`). Seule l'orchestration Airflow
+> des étapes d'acquisition/traitement est industrialisée à ce stade -
+> l'API se lance encore manuellement (`uvicorn`, ci-dessus) et PostGIS
+> reste sur l'hôte, pas en conteneur.
 
 ---
 
@@ -300,7 +398,7 @@ jupyter notebook notebooks/03_series_s2.ipynb
 
 > *Cette section sera alimentée jalon par jalon.*
 
-**S1 - Ingestion RPG (terminée)**
+**Ingestion RPG**
 
 RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
 
@@ -321,7 +419,7 @@ RPG millésime 2024, Normandie (R28), base RPG\_Parcelles v3.0 :
 > La QA géométrique (`ST_IsValid` / `ST_MakeValid`) est appliquée à `raw` **avant** le
 > filtre AOI, pour qu'aucune parcelle invalide ne soit silencieusement exclue sans trace.
 
-**S1 - Disponibilité Sentinel-2 (terminée)**
+**Disponibilité Sentinel-2**
 
 Catalogue CDSE, 4 tuiles (30UYA · 31UCR · 30UYV · 31UCQ), fenêtre sept. 2023 → déc. 2024 :
 
@@ -333,10 +431,10 @@ Catalogue CDSE, 4 tuiles (30UYA · 31UCR · 30UYV · 31UCQ), fenêtre sept. 2023
 
 > Aucun filtre de couverture nuageuse appliqué au catalogue - toutes les scènes L2A
 > disponibles sont recensées. La disponibilité effective sur l'AOI (`f_valid_aoi`)
-> est calculée en sprint S2 à partir de la bande SCL.
+> est calculée à l'étape suivante (séries temporelles) à partir de la bande SCL.
 > Voir `data/raw/s2/AVAILABILITY_REPORT.json` pour le détail mensuel.
 
-**S2 - Séries temporelles (terminé)**
+**Séries temporelles**
 
 Table spatio-temporelle `derived.s2_parcelles_monthly` :
 
@@ -357,7 +455,7 @@ Table spatio-temporelle `derived.s2_parcelles_monthly` :
 > rasterisation. Correction EVI août 2024 : dénominateur instable en pleine
 > végétation, recalculé depuis les composites de bandes.
 
-**S3 - Classification (terminé)**
+**Classification**
 
 Baseline Random Forest (`n_estimators=300`, `max_depth=30`, `min_samples_leaf=5`,
 `class_weight="balanced"`), split spatial par blocs (75 blocs) :
@@ -379,7 +477,7 @@ Baseline Random Forest (`n_estimators=300`, `max_depth=30`, `min_samples_leaf=5`
 > gain nul, la confusion `autres`/`prairie` se redistribue sans se réduire - indice
 > d'un problème de qualité de label RPG plutôt que de feature manquante.
 
-**S4 - Divergence & phénologie (terminé)**
+**Divergence & phénologie**
 
 Distance RMS standardisée (z-score) au profil médian de classe; lissage Whittaker
 pondéré (λ=800) pour SOS/POS/EOS/LOS, fenêtres calendaires par classe :
@@ -405,7 +503,7 @@ pondéré (λ=800) pour SOS/POS/EOS/LOS, fenêtres calendaires par classe :
 > pas un échec de méthode. Flag `zone_raccord_orbital` ajouté pour isoler la bande
 > de divergence structurelle liée au raccord orbital 51/94 sur la tuile 30UYV.
 
-**S5 - Service (terminé)**
+**Service**
 
 FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de build :
 
@@ -421,7 +519,7 @@ FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de bui
 > geste naturel d'une carte interactive est de réduire le `bbox` (zoom/déplacement),
 > pas de paginer une même zone.
 
-<!-- S6 : ajouter ici les métriques d'industrialisation (CI, temps de traitement) -->
+<!-- Industrialisation : ajouter ici les métriques (CI, temps de traitement) -->
 
 ---
 

@@ -183,7 +183,8 @@ def run_zonal(ctx: dict, mois_complets: list[str]) -> None:
 
 
 def _preparer_grille_labels(ctx: dict):
-    """Crée les tables si absentes, rasterise la grille de labels.
+    """Rasterise la grille de labels (les 3 tables cibles sont créées par la
+    migration 0007, plus par cette fonction).
 
     Recalculée indépendamment par chacune des 3 fonctions `run_zonal_*`
     (redondant, ~15-20 s à chaque fois d'après les runs déjà observés),
@@ -195,7 +196,9 @@ def _preparer_grille_labels(ctx: dict):
     """
     conn = get_connection()
     conn.autocommit = True
-    zonal.creer_tables_zonales(conn)
+    # Depuis la migration 0007 (sprint S3) : les 3 tables sont créées par la
+    # migration, plus par l'application - `zonal.creer_tables_zonales(conn)`
+    # a été supprimée de `zonal.py`, l'appel disparaît ici en conséquence.
     gdf_parcelles, label_grid, label_to_id = zonal.charger_grille_labels(
         conn, ctx["grille"]
     )

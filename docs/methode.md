@@ -24,7 +24,7 @@ L'AOI (3 349 km²) couvre le Pays de Caux et le plateau du Neubourg, de part et 
 
 ### Pipeline
 
-La chaîne se déroule en six sprints séquentiels. S1 ingère le RPG dans PostGIS et diagnostique la disponibilité Sentinel-2. S2 télécharge les bandes spectrales, calcule les indices (NDVI, EVI, NDWI, NDRE), produit les composites mensuels et agrège les statistiques zonales par parcelle. S3 entraîne et évalue un modèle de classification (Random Forest en baseline, option Deep Learning). S4 détecte les divergences entre couvert observé et culture déclarée, et extrait les métriques phénologiques (SOS/POS/EOS). S5 expose les résultats via une API FastAPI et une carte web interactive. S6 industrialise la chaîne (Airflow, tests, CI/CD).
+La chaîne se déroule en sept sprints séquentiels. S1 ingère le RPG dans PostGIS et diagnostique la disponibilité Sentinel-2. S2 télécharge les bandes spectrales, calcule les indices (NDVI, EVI, NDWI, NDRE), produit les composites mensuels et agrège les statistiques zonales par parcelle. S3 entraîne et évalue un modèle de classification (Random Forest en baseline, option Deep Learning). S4 détecte les divergences entre couvert observé et culture déclarée, et extrait les métriques phénologiques (SOS/POS/EOS). S5 expose les résultats via une API FastAPI et une carte web interactive. S6 industrialise l'orchestration (Airflow via Docker, deux DAG validés de bout en bout) - tests automatisés et conteneurisation de l'API restent hors périmètre, décision assumée (cf. Clôture du sprint S6). S7 affine le MCD/MPD et complète le DDL du socle PostGIS (PK, FK, DDL versionné) dans le cadre de la mission de portfolio P1.
 
 ### Feature set
 
@@ -475,7 +475,7 @@ Déploiement (Docker) repris en S6 (cf. section Déploiement ci-dessous). **Hors
 
 ---
 
-### S6 - Industrialisation *(prévu)*
+### S6 - Industrialisation *(terminé, périmètre réduit - cf. Clôture du sprint S6)*
 
 #### Orchestration
 
@@ -527,7 +527,7 @@ La logique de S1-S4, actuellement dans les notebooks (`01_ingestion_rpg.ipynb` �
 | `src/processing/composites.py` | ✅ fait | §3.3 | `compute_monthly_composite`, `construire_composites_mensuels` (boucle mois × variable) |
 | `src/processing/zonal.py` | ✅ fait | §3.4, §3.5, §3.6 | `creer_tables_zonales`, `charger_grille_labels` (retourne aussi `gdf_parcelles`, écart du portage strict - nécessaire à `diagnostiquer_parcelles_non_rasterisees`), `diagnostiquer_parcelles_non_rasterisees`, 3× (`zonal_*_from_labels` + `charger_*_vers_postgis`) pour `s2_parcelles_monthly`/`_completude`/`_ndvi_dates`. Connexion PostGIS passée en paramètre (pas `get_connection()` par appel), fermée explicitement (`conn.close()`, cf. note dédiée) |
 | `scripts/run_processing.py` | ✅ fait | nouveau en S6 (pas un portage) | Orchestration manuelle des 6 modules `src/processing/` dans l'ordre, flags `--skip-*` par phase - mêmes réserves que `run_ingestion.py` (pas de reprise fine sur échec). Docstring documente explicitement les contraintes durée/mémoire pour les futurs tests (cf. §Tests) |
-| `src/ml/features.py` | ✅ fait | `04_classification.ipynb` §4.1 | `charger_feature_set_long`, `pivoter_features` (704 features par défaut, plus figé en dur - vérification optionnelle via `n_features_attendu`), `charger_et_regrouper_classes` (`GROUP_MAP`, constante locale au module - décision de modélisation, pas un paramètre de campagne), `joindre_classes`, `diagnostiquer_nan` |
+| `src/ml/features.py` | ✅ fait | `04_classification.ipynb` §4.1 | `charger_feature_set_long`, `pivoter_features` (704 features par défaut, plus figé en dur - vérification optionnelle via `n_features_attendu`), `charger_et_regrouper_classes` (depuis la migration 0005, sprint S3 : lit `classe_declaree` sur `derived.rpg_parcelles_aoi`, `GROUP_MAP` supprimé du module), `joindre_classes`, `diagnostiquer_nan` |
 | `src/ml/imputation.py` | ✅ fait | §4.1bis | ⚠️ ordonnancement des fonctions **corrigé** par rapport à l'ordre d'affichage des cellules du notebook (voir note dédiée ci-dessous). `charger_completude`, `calculer_qc_action`, `construire_tier_wide`, `diagnostiquer_distance_ancrage`, `corriger_tier_ancrage_eloigne` (étendue - voir note), `appliquer_interpolation` |
 | `src/ml/split.py` | ✅ fait | §4.2 | `charger_centroides`, `split_spatial_par_blocs`, `joindre_split`, `verifier_representation_classes`. `BLOCK_SIZE`/`TEST_RATIO`/`SEED` constantes locales (hyperparamètres de modélisation, pas de campagne) |
 | `src/ml/train.py` | ✅ fait | §4.3 | `construire_matrices`, `entrainer_rf_baseline`, `evaluer_modele` (généralisée - fusionne les cellules 19/21 du notebook, dupliquées à l'identique pour baseline et modèle tuné), `rechercher_hyperparametres` (`RandomizedSearchCV`, `cv=3` - limitation déjà documentée plus bas dans ce document, non corrigée), `top_features_importance`, `generer_diagnostics_modele` (nouveau, voir note) |
@@ -652,20 +652,24 @@ au fil des runs (comparaison baseline/tuné, suivi dans le temps), sur le
 même principe que les diagnostics déjà en place pour l'acquisition et le
 traitement.
 
-**Constantes de modélisation restées locales aux modules** (`GROUP_MAP`
-dans `features.py`, `BLOCK_SIZE`/`TEST_RATIO`/`SEED` dans `split.py`,
-`RF_PARAMS_BASELINE`/`PARAM_DIST_SEARCH`/`SEED` dans `train.py`) : pas
-ajoutées à `src/config.py`, qui reste réservé aux paramètres de campagne
-(millésime, fenêtre temporelle, chemins) - ce sont des décisions de
-modélisation, dont la place naturelle est avec le code qui les utilise.
+**Constantes de modélisation restées locales aux modules** (`BLOCK_SIZE`/`TEST_RATIO`/`SEED`
+dans `split.py`, `RF_PARAMS_BASELINE`/`PARAM_DIST_SEARCH`/`SEED` dans
+`train.py`) : pas ajoutées à `src/config.py`, qui reste réservé aux
+paramètres de campagne (millésime, fenêtre temporelle, chemins) - ce sont
+des décisions de modélisation, dont la place naturelle est avec le code
+qui les utilise. `GROUP_MAP` a disparu de cette liste depuis la migration
+0005 (sprint S3) : le regroupement de classes est désormais une formule
+SQL versionnée (`db/migrations/0005_rpg_parcelles_aoi_classe_declaree.sql`),
+plus une constante de module.
 
 #### Détails critiques `src/phenology/`
 
 **§5.1 non porté en module propre** : le chargement/pivot du feature set
-était quasi identique à `src.ml.features` (même `GROUP_MAP`, même
-dédoublonnage RPG, même pivot long→wide) - réutilisé directement dans
-`scripts/run_phenology.py` plutôt que dupliqué. Aucun code écrit pour
-cette section dans `src/phenology/`.
+était quasi identique à `src.ml.features` (même pivot long→wide, même
+lecture de `classe_declaree` depuis la migration 0005 - avant 0005, même
+`GROUP_MAP`) - réutilisé directement dans `scripts/run_phenology.py`
+plutôt que dupliqué. Aucun code écrit pour cette section dans
+`src/phenology/`.
 
 **`id_parcels`/`classes` en tableaux explicites** (`phenology.py`) plutôt
 qu'un DataFrame indexé : `X_smooth` (sortie de `whittaker.py`) n'a aucune
@@ -926,9 +930,103 @@ tests sera implémentée.
 
 **Docker** : conteneurisation de l'API (`src/api/`) et du DAG Airflow, cohérente avec l'orchestration déjà retenue pour S6 - un `docker-compose` local (API + PostGIS + Airflow) plutôt qu'un hébergement distant, l'objectif restant la démonstration reproductible plutôt qu'un service public. `GET /health` (déjà prévu en S5) sert de liveness probe.
 
+**Réalisé à la clôture** : seule la conteneurisation du DAG Airflow a été effectivement mise en œuvre (`docker-compose.yml`, `requirements-airflow.txt`, service `airflow-init`) - la conteneurisation de l'API décrite ci-dessus reste au stade de décision, non implémentée (cf. Clôture du sprint S6 ci-dessous). PostGIS (`seinecrops`) reste lui aussi sur l'hôte Windows, par décision actée en écrivant `docker-compose.yml` (« option 2 », commentaire d'en-tête du fichier) plutôt que par oubli : seule la base de métadonnées Airflow (`postgres-airflow`) est conteneurisée, les conteneurs Airflow atteignent PostGIS via `host.docker.internal` (`PG_HOST` surchargé dans `environment:`, sans modifier le `.env` réel).
+
 #### Documentation
 
 Dictionnaire de données PostGIS (par table `raw.*`/`derived.*` : colonnes, types, contraintes, origine) et schéma de la base : `cadrage/dictionnaire_donnees_postgis.md` (nouveau, clôture S6) - DDL confirmé pour toutes les tables sauf le schéma natif complet de `raw.rpg_parcelles`/`raw.aoi_seinecrops` (chargement GDAL/`pyogrio`, hors DDL Python explicite). README mis à jour jalon par jalon plutôt qu'en bloc final, note de méthode (ce document).
+
+---
+
+### S7 - Socle PostGIS : MCD/MPD affiné et DDL versionné
+
+**Origine de ce sprint, distincte de la séquence S0-S6.** Ce sprint ne
+fait pas partie de la feuille de route interne de SeineCrops : il
+correspond aux sprints S2 (« affinement du MCD/MPD à partir du
+dictionnaire existant ») et S3 (« compléter le DDL existant : schéma
+natif des tables `raw`, FK ») du projet de portfolio **P1** (« Bascule de
+SeineCrops et du projet d'accessibilité sur un socle PostGIS modélisé »),
+qui traite SeineCrops comme l'un de ses deux sous-projets. Les deux
+sprints P1 sont regroupés ici sous un unique S7 côté SeineCrops, pour ne
+pas mélanger le séquencement interne du projet avec celui, différent, du
+portfolio P1.
+
+#### Affinement du MCD/MPD (`MCD_MPD_seinecrops_affinement.md`)
+
+Point de départ : le dictionnaire de données clôturé en S6 documentait un
+schéma déjà écrit, mais des relations entre tables explicitement
+**conventionnelles, non contraintes** - « rien n'empêche en théorie une
+incohérence entre `derived.parcelles_classification` et
+`derived.rpg_parcelles_aoi` ». La démarche « MCD avant MPD » du gabarit
+de dossier projet demande d'inverser cet ordre : poser d'abord les
+cardinalités réelles, puis vérifier que le DDL existant les respecte.
+
+**Blocage identifié** : `derived.rpg_parcelles_aoi` est un `CTAS` sans
+`PRIMARY KEY`, ce qui empêche toute `FOREIGN KEY` réelle depuis les
+tables filles. Vérifié dans `src/acquisition/rpg.py::filtrer_aoi` : un
+`CTAS` brut (`JOIN ST_Intersects`), sans `dissolve` ni `GROUP BY` - le
+dédoublonnage `id_parcel` documenté en S2 (`zonal.py`, juste avant
+rasterisation) intervient en aval, pas à la création de la table. Une
+migration de PK doit donc intégrer son propre dédoublonnage plutôt que
+supposer l'unicité déjà acquise.
+
+**Décision tranchée** (point resté ouvert depuis le cadrage) :
+`classe_declaree` centralisée sur `derived.rpg_parcelles_aoi`, lue par
+jointure depuis les tables filles, plutôt que répétée sur
+`parcelles_classification`, `divergence` et `phenologie` - propriété de
+la parcelle (issue du RPG, statique sur la campagne), pas un résultat de
+pipeline ; la répéter sur trois tables écrites par trois pipelines
+distincts exposait à un désaccord si `GROUP_MAP` évoluait et qu'une
+seule table était rejouée (upserts indépendants, `ON CONFLICT DO UPDATE`
+par table).
+
+**Proposé mais non implémenté** : un typage resserré de `code_cultu`/
+`code_group` en `varchar(3)` (codes RPG à longueur fixe) figurait dans le
+document d'affinement (§4.2). Les migrations réelles (ci-dessous)
+conservent `character varying` sans longueur - écart entre la conception
+et le DDL exécuté, à traiter dans une itération ultérieure si la
+contrainte de longueur s'avère utile en pratique, pas silencieusement
+oublié.
+
+#### DDL versionné (`db/migrations/0001` à `0007`)
+
+Migrations SQL numérotées, forward-only (pas de rollback), une
+transaction par script, table de suivi `public.schema_migrations` :
+
+| # | Objet | Idempotence |
+|---|---|---|
+| 0001 | Table de suivi des migrations | `IF NOT EXISTS` + `ON CONFLICT DO NOTHING` |
+| 0002 | DDL explicite `raw.rpg_parcelles` et `raw.aoi_seinecrops`, schéma natif introspecté sur la base réelle (`\d+`) - jusque-là chargé implicitement par GDAL, sans déclaration Python | `IF NOT EXISTS` |
+| 0003 | Dissolve des 6 doublons `id_parcel` (`ST_Union` pour la géométrie, attributs de la géométrie la plus grande) + `PRIMARY KEY` sur `derived.rpg_parcelles_aoi` | `DROP TABLE` non rejouable après `0004` (dépendance FK), documenté en tête de fichier |
+| 0004 | 6 `FOREIGN KEY` des tables filles vers `derived.rpg_parcelles_aoi` (0 orphelin vérifié sur le jeu complet avant application) | Non idempotente par choix assumé - pas d'équivalent `ADD CONSTRAINT IF NOT EXISTS` en PostgreSQL |
+| 0005 | Centralisation de `classe_declaree` (formule SQL validée à 0 écart contre l'ancien `GROUP_MAP` Python sur les 77 932 parcelles déjà classées), colonne retirée des 3 tables filles | `ADD COLUMN IF NOT EXISTS` / `DROP COLUMN IF EXISTS` |
+| 0006 | DDL de `derived.parcelles_classification`, `derived.divergence`, `derived.phenologie` extrait du code applicatif (`predict.py`, `persist.py`) | `IF NOT EXISTS` |
+| 0007 | DDL de `derived.s2_parcelles_monthly`/`_completude`/`_ndvi_dates` extrait du code applicatif (`zonal.py::creer_tables_zonales`) | `IF NOT EXISTS` |
+
+**Nettoyage applicatif corrélé, dans le même esprit que la règle du
+gabarit §9 (DDL hors code applicatif)** : `GROUP_MAP` supprimé de
+`features.py` (`charger_et_regrouper_classes` lit désormais
+`classe_declaree` depuis la base) ; fonctions `creer_table_classification()`
+(`predict.py`), `creer_tables_phenologie()` (`persist.py`) et
+`creer_tables_zonales()` (`zonal.py`) supprimées, avec leurs appelants
+dans `src/ml/orchestration.py`, `src/phenology/orchestration.py` et
+`src/processing/orchestration.py`. Un dissolve applicatif redondant dans
+`zonal.py::charger_grille_labels` (devenu inutile depuis la `PRIMARY KEY`
+de `0003`) retiré au passage.
+
+**Documentation mise à jour en conséquence** :
+`cadrage/dictionnaire_donnees_postgis.md` (PK, FK, retrait de
+`classe_declaree` des tables filles, sources DDL renvoyées vers les
+migrations plutôt que vers le code applicatif) et ce document (statut du
+S6, présente section).
+
+#### Clôture du sprint S7
+
+Deux PR distinctes : la première couvre `0001` à `0006` (DDL initial et
+première vague de nettoyage applicatif), la seconde `0007` et la mise à
+jour documentaire associée (dictionnaire, présente section, README).
+Volet accessibilité MRN/SERM de la mission P1 (DDL + ingestion des
+`.gpkg`) hors périmètre de ce sprint, traité séparément.
 
 ---
 
