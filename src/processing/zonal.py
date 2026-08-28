@@ -36,52 +36,14 @@ from rasterio.features import rasterize as rio_rasterize
 logger = logging.getLogger(__name__)
 
 
-def creer_tables_zonales(conn) -> None:
-    """Crée les 3 tables cibles si absentes (portage §3.4/§3.5/§3.6, regroupées
-    ici plutôt que dispersées — exécution idempotente).
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS derived.s2_parcelles_monthly (
-                id_parcel  TEXT  NOT NULL,
-                mois       TEXT  NOT NULL,
-                variable   TEXT  NOT NULL,
-                mean       REAL,
-                std        REAL,
-                p10        REAL,
-                p90        REAL,
-                PRIMARY KEY (id_parcel, mois, variable)
-            );
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS derived.s2_parcelles_completude (
-                id_parcel             TEXT  NOT NULL,
-                mois                  TEXT  NOT NULL,
-                n_dates_valides_moy   REAL,
-                pct_pixels_couverts   REAL,
-                PRIMARY KEY (id_parcel, mois)
-            );
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS derived.s2_parcelles_ndvi_dates (
-                id_parcel  TEXT  NOT NULL,
-                date       DATE  NOT NULL,
-                mean       REAL,
-                std        REAL,
-                n_pixels   INTEGER,
-                PRIMARY KEY (id_parcel, date)
-            );
-            """
-        )
-    conn.commit()
-    logger.info(
-        "Tables zonales prêtes (s2_parcelles_monthly, _completude, _ndvi_dates)."
-    )
+# Depuis la migration 0007 (sprint S3) : le DDL de `s2_parcelles_monthly`,
+# `s2_parcelles_completude` et `s2_parcelles_ndvi_dates` ne vit plus ici
+# (cf. `db/migrations/0007_derived_ddl_zonal.sql`). `creer_tables_zonales()`
+# est supprimée — les trois tables sont créées par la migration, pas par
+# l'application (gabarit §9). Tout appelant de `creer_tables_zonales(conn)`
+# doit être retiré ; aucun appelant n'a été identifié dans les fichiers du
+# projet disponibles ici (orchestration_ml.py, orchestration_phenologie.py)
+# — à vérifier dans le dépôt réel avant de considérer cette migration close.
 
 
 def charger_grille_labels(
@@ -103,13 +65,15 @@ def charger_grille_labels(
         )
         geom_col = cur.fetchone()[0]
 
+    # Depuis la migration 0003 (sprint S3) : `id_parcel` est PRIMARY KEY sur
+    # `derived.rpg_parcelles_aoi`, les doublons ont été dissous en base
+    # (ST_Union). Le dissolve applicatif qui compensait ici ces doublons
+    # avant la migration est donc supprimé — un par id_parcel est déjà
+    # garanti par la contrainte, pas besoin de le refaire à chaque lecture.
     gdf_parcelles = gpd.read_postgis(
         f"SELECT id_parcel, {geom_col} FROM derived.rpg_parcelles_aoi",
         conn,
         geom_col=geom_col,
-    )
-    gdf_parcelles = gdf_parcelles.dissolve(by="id_parcel", as_index=False).reset_index(
-        drop=True
     )
     gdf_parcelles["label"] = gdf_parcelles.index + 1
     label_to_id = dict(zip(gdf_parcelles["label"], gdf_parcelles["id_parcel"]))
