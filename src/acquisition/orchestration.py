@@ -46,7 +46,6 @@ def run_rpg() -> None:
         config.AOI_GEOJSON, config.DATA_RAW_RPG
     )
     rpg.filtrer_aoi()
-    rpg.indexer_rpg_aoi()
 
     resultats = rpg.valider_ingestion()
     surf_totale_ha = rpg.calculer_surface_totale_aoi()

@@ -453,25 +453,6 @@ def filtrer_aoi() -> int:
     return n_aoi
 
 
-def indexer_rpg_aoi() -> None:
-    """Index GIST (géométrie) + B-tree (`code_cultu`) sur `derived.rpg_parcelles_aoi` (portage §4.4)."""
-    sql = """
-        CREATE INDEX IF NOT EXISTS idx_rpg_parcelles_aoi_geom
-            ON derived.rpg_parcelles_aoi
-            USING GIST (geom);
-
-        CREATE INDEX IF NOT EXISTS idx_rpg_parcelles_aoi_code_cultu
-            ON derived.rpg_parcelles_aoi (code_cultu);
-    """
-    with connexion() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-            conn.commit()
-    logger.info(
-        "Index créés sur derived.rpg_parcelles_aoi (GIST géométrie, B-tree code_cultu)."
-    )
-
-
 # ── §5 — Validation et clôture ──────────────────────────────────────────────
 
 
@@ -498,12 +479,21 @@ def valider_ingestion() -> dict:
     """Assertions formalisées sur l'ingestion (portage §5.1-5.2).
 
     Répare si nécessaire (`derived.rpg_parcelles_aoi`), puis vérifie CRS,
-    volumes, absence de fuite/duplication (`derived` ⊂ `raw`), présence des
-    index. Lève `AssertionError` au premier échec — sert de porte QC pour
-    la tâche Airflow correspondante (bloque `nettoyage_intermediaires` en
-    cas d'échec). Retourne un dict de résultats en cas de succès, réutilisé
+    volumes, absence de fuite/duplication (`derived` ⊂ `raw`). Lève
+    `AssertionError` au premier échec — sert de porte QC pour la tâche
+    Airflow correspondante (bloque `nettoyage_intermediaires` en cas
+    d'échec). Retourne un dict de résultats en cas de succès, réutilisé
     par `ecrire_rapport_cloture` et exploitable par un futur test pytest
     d'intégration.
+
+    Ne vérifie plus la présence des index (`idx_rpg_parcelles_aoi_geom`,
+    `idx_rpg_parcelles_aoi_code_cultu`) : à ce stade de la chaîne
+    d'ingestion (S1), ces index n'existent pas encore — ils sont posés
+    par la migration `0003` (P1 S7), exécutée après coup, pas par cette
+    fonction. Leur présence et leur usage effectif sont désormais
+    vérifiés par le jeu de tests de schéma (`tests/db/test_schema.py`),
+    au bon niveau : contre l'état de la base après migrations, pas contre
+    l'état intermédiaire post-ingestion.
     """
     n_invalides_derived = qa_validite("derived.rpg_parcelles_aoi", "geom")
     n_reparees_derived = reparer_si_necessaire(
@@ -536,14 +526,6 @@ def valider_ingestion() -> dict:
             )
             n_orphelines = cur.fetchone()[0]
 
-            cur.execute(
-                """
-                SELECT indexname FROM pg_indexes
-                WHERE schemaname = 'derived' AND tablename = 'rpg_parcelles_aoi';
-                """
-            )
-            index_presents = [r[0] for r in cur.fetchall()]
-
     assert srid_raw == 2154, f"CRS raw.rpg_parcelles inattendu : {srid_raw}"
     assert srid_aoi_brut == 2154, f"CRS raw.aoi_seinecrops inattendu : {srid_aoi_brut}"
     assert (
@@ -558,10 +540,6 @@ def valider_ingestion() -> dict:
     assert (
         n_invalides_derived == 0
     ), f"{n_invalides_derived} géométrie(s) invalide(s) restante(s) dans derived"
-    assert any("geom" in idx for idx in index_presents), "Index GIST manquant"
-    assert any(
-        "code_cultu" in idx for idx in index_presents
-    ), "Index code_cultu manquant"
 
     logger.info(
         "Validation réussie : %s parcelles (derived) / %s (raw).",
@@ -578,7 +556,6 @@ def valider_ingestion() -> dict:
         "n_orphelines": n_orphelines,
         "n_invalides_derived": n_invalides_derived,
         "n_reparees_derived": n_reparees_derived,
-        "index_presents": index_presents,
     }
 
 
@@ -663,7 +640,6 @@ def ecrire_rapport_cloture(
                 "n_reparees_derived"
             ],
             "parcelles_orphelines": resultats_validation["n_orphelines"],
-            "index_presents": resultats_validation["index_presents"],
             "note_ordre_qa": (
                 "QA géométrique appliquée à raw AVANT le filtre AOI (4.1bis), pas après : "
                 "une parcelle invalide dans l'AOI doit être réparée ou explicitement tracée, "
