@@ -62,8 +62,22 @@ paramétré.
 | `cat_cult_p` | text | Catégorie de culture principale |
 | `geom` | geometry(MultiPolygon, 2154) | Géométrie (renommée depuis `wkb_geometry`) |
 
-**Index** (`indexer_rpg_aoi`) : `idx_rpg_parcelles_aoi_geom` (GIST sur
-`geom`), `idx_rpg_parcelles_aoi_code_cultu` (B-tree sur `code_cultu`).
+**Index** (migration `0003`, `db/migrations/0003_derived_rpg_parcelles_aoi_pk.sql`) :
+`idx_rpg_parcelles_aoi_geom` (GIST sur `geom`), justifié par un usage réel
+identifié (`GET /parcelles?bbox=`, `SQL_BBOX`/`SQL_COUNT_BBOX` dans
+`src/api/queries.py`) ; `idx_rpg_parcelles_aoi_code_cultu` (B-tree sur
+`code_cultu`), **dette technique non justifiée** : posé à l'origine par
+`rpg.py::indexer_rpg_aoi` (portage §4.4, avant l'existence des migrations
+versionnées), recréé par `0003` lors du dissolve/PK, sans qu'un pattern de
+requête réel ne le justifie (`grep` sur `code_cultu` en clause `WHERE`/`JOIN` :
+aucune occurrence, seulement des colonnes sélectionnées pour affichage API).
+Conservé tel quel (S8) plutôt que retiré, faute de gain de suppression
+mesurable et pour ne pas régresser silencieusement un usage non identifié -
+à revisiter si un filtre par culture apparaît côté API.
+
+`indexer_rpg_aoi` a été retiré de `rpg.py` (S8) : la DDL des deux index ne
+vit plus qu'à un seul endroit (`0003`), plus de duplication code
+applicatif/migration.
 
 **Grain** : une ligne par parcelle. 80 689 lignes (intersection AOI, ST_Intersects,
 parcelles conservées entières).
