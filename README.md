@@ -131,7 +131,9 @@ SeineCrops/
 │   ├── 04_classification.ipynb   # Baseline RF, split spatial par blocs, évaluation (F1 macro 0,893)
 │   └── 05_divergence_pheno.ipynb # Distance RMS standardisée, phénologie Whittaker SOS/POS/EOS (sections 5.1–5.4)
 ├── db/
-│   └── migrations/            # DDL versionné, 0001 à 0007 - ordre de rejeu imposé par les dépendances, pas numérique (cf. Démarrage rapide)
+│   ├── migrations/            # DDL versionné, 0001 à 0007 - ordre de rejeu imposé par les dépendances, pas numérique (cf. Démarrage rapide)
+│   └── benchmarks/            # Scripts avant/après par sprint d'index (gabarit §9)
+│       └── s8_benchmark_index_geom.py  # idx_rpg_parcelles_aoi_geom, requêtes bbox réelles (S8)
 ├── scripts/                   # Enveloppes CLI (§ Démarrage rapide), utilisées aussi par le DAG Airflow
 │   ├── run_ingestion.py          # Ingestion RPG + catalogue CDSE (portage 01+02)
 │   ├── run_processing.py         # Séries temporelles S2 (portage 03)
@@ -154,10 +156,13 @@ SeineCrops/
 │   └── index.html            # carte web MapLibre - fond OSM, couche parcelles, panneau de détail + graphique NDVI
 ├── tests/
 │   ├── conftest.py
-│   └── api/
-│       ├── conftest.py       # fixture de connexion asyncpg
-│       ├── test_queries.py             # tests unitaires (logique pure)
-│       └── test_queries_integration.py # tests d'intégration PostGIS
+│   ├── api/
+│   │   ├── conftest.py       # fixture de connexion asyncpg
+│   │   ├── test_queries.py             # tests unitaires (logique pure)
+│   │   └── test_queries_integration.py # tests d'intégration PostGIS
+│   └── db/                   # tests de schéma, cumulatifs (gabarit §9) - PK, FK, index, usage réel
+│       ├── conftest.py       # fixture de connexion psycopg2 (distincte de tests/api/, cf. methode.md §S8)
+│       └── test_schema.py    # 0002 à 0007 + index spatiaux (S8)
 ├── .env                      # identifiants PostGIS (non versionné)
 ├── .gitignore                # Exclusions du versionning
 ├── .pre-commit-config.yaml
@@ -377,8 +382,20 @@ uvicorn src.api.main:app --reload
 **Orchestration Airflow (optionnelle, via Docker)**
 
 Alternative à l'enchaînement manuel des scripts ci-dessus : les 4 étapes
-d'acquisition/traitement sont orchestrées par deux DAG Airflow
-(`seinecrops_acquisition_s2`, `seinecrops_zonal_ml_phenologie`).
+d'acquisition/traitement (ingestion RPG + catalogue Sentinel-2, séries
+temporelles, classification, divergence & phénologie) sont orchestrées
+par deux DAG Airflow (`seinecrops_acquisition_s2`,
+`seinecrops_zonal_ml_phenologie`).
+
+> **Les migrations de contrainte ne font pas partie du DAG.** Elles
+> doivent être jouées manuellement (cf. « Migrations de contrainte »
+> ci-dessus) **avant** tout premier déclenchement de DAG sur une base
+> neuve - le DAG suppose que `derived.parcelles_classification`,
+> `derived.divergence`, `derived.phenologie` et `derived.s2_parcelles_*`
+> existent déjà (créées par les migrations `0006`/`0007`, plus par
+> l'application), sans quoi la tâche de séries temporelles échoue dès sa
+> première écriture. Limite actuelle, pas prévue pour être comblée par le
+> DAG lui-même à ce stade.
 
 ```bash
 docker compose up airflow-init
@@ -413,11 +430,17 @@ docker compose exec airflow-webserver airflow dags trigger seinecrops_zonal_ml_p
 > l'utilisateur `admin` sont créés automatiquement par `airflow-init`.
 >
 > **Hors périmètre, non implémenté** (`methode.md`, clôture du sprint
-> d'industrialisation) : tests automatisés (pytest/CI GitHub Actions) et
-> conteneurisation de l'API (`src/api/`). Seule l'orchestration Airflow
-> des étapes d'acquisition/traitement est industrialisée à ce stade -
-> l'API se lance encore manuellement (`uvicorn`, ci-dessus) et PostGIS
-> reste sur l'hôte, pas en conteneur.
+> d'industrialisation) : CI GitHub Actions et conteneurisation de l'API
+> (`src/api/`). Seule l'orchestration Airflow des étapes
+> d'acquisition/traitement est industrialisée à ce stade - l'API se
+> lance encore manuellement (`uvicorn`, ci-dessus) et PostGIS reste sur
+> l'hôte, pas en conteneur.
+>
+> Les tests, eux, sont implémentés et exécutés manuellement (aucun des
+> deux n'est branché sur une CI, puisqu'il n'y en a pas à ce stade) :
+> `tests/api/` (couche API, 2 tests unitaires + 7 tests d'intégration
+> PostGIS, `pytest tests/api/`) et `tests/db/` (schéma - PK/FK/index/
+> usage réel des index, `methode.md` §S8, `pytest tests/db/`).
 
 ---
 
@@ -537,7 +560,7 @@ FastAPI (`src/api/`) + carte web MapLibre (`web/index.html`), sans étape de bui
 | Indicateur | Valeur |
 |---|---|
 | Endpoints | `GET /parcelles/{id}`, `GET /parcelles/{id}/profil`, `GET /parcelles?bbox=`, `GET /health` |
-| Tests | 9 tests d'intégration PostGIS + 2 tests unitaires (`pytest`) |
+| Tests | 9 (`pytest tests/api/`) : 2 unitaires (`test_queries.py`) + 7 d'intégration PostGIS (`test_queries_integration.py`) |
 | `BBOX_MAX_AREA_KM2` / `limit` | 50 km² / 2000 - mesurés sur la densité réelle de parcelles (24,1/km²) |
 | Tolérance de simplification géométrique | 5 m (médiane 18 → 7 sommets/parcelle) |
 | Carte web | fond OSM (raster, sans clé API), couleurs liées aux cultures réelles (colza jaune, lin bleu…), panneau de détail + graphique NDVI au clic |
